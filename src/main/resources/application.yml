@@ -1,0 +1,34 @@
+spring.application.name: oiltank-monitor
+spring.profiles.active: ${PROFILE:local}
+
+info:
+  app:
+    name: ${spring.application.name}
+    description: Oil tank level monitor publishing to Home Assistant over MQTT
+    profile: ${spring.profiles.active}
+
+server:
+  # 5001 rather than the Spring Boot default of 8080, which collides with other
+  # local Docker containers.
+  port: ${SERVER_PORT:5001}
+
+# Root of every feature's Datafill (camera, detection, level, publish); see
+# docs/DESIGN.md. Empty until the first feature lands.
+oiltank: {}
+
+management:
+  endpoints:
+    web:
+      base-path: /mgmt
+      exposure:
+        include: health,info,metrics,integrationgraph
+  endpoint:
+    health:
+      # Each feature's indicator, with its details. Not `management.health.*`, which
+      # configures the indicators themselves rather than what the endpoint shows.
+      show-details: always
+  info:
+    build.enabled: true
+    env.enabled: true
+    java.enabled: true
+    os.enabled: true
