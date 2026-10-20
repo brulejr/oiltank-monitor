@@ -11,7 +11,13 @@ package io.brulejr.oiltank
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 
-@SpringBootTest
+@SpringBootTest(
+    properties = [
+        // Replays a fixture image rather than reaching a camera.
+        "oiltank.camera.source=file",
+        "oiltank.camera.file.directory=src/test/resources/snapshots",
+    ],
+)
 class OiltankMonitorApplicationTests {
 
     @Test

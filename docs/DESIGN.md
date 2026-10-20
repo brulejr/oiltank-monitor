@@ -1,7 +1,7 @@
 # Oil Tank Monitor: Design Notes
 
-Status: draft for review. Only the skeleton exists (build, actuator, context-load
-test). Nothing in the feature sections below is implemented. Items marked
+Status: draft for review. `pipeline/` and `camera/` are implemented; detection,
+level and publish are not. Items marked
 **Proposed** go beyond the prototype and need a decision. Questions still open
 are collected at the end.
 
@@ -28,13 +28,13 @@ to follow the conventions of [`brulejr/iot-pipeline`](https://github.com/brulejr
 ## Pipeline
 
 One reading moves through four stages, joined by direct channels named in
-`pipeline/OiltankChannels.kt` and declared in `pipeline/PipelineConfig`:
+`pipeline/PipelineChannels.kt` and declared in `pipeline/PipelineConfig`:
 
 ```
  camera ──snapshot──▶ detection ──floatReading──▶ level ──tankLevel──▶ publish ──▶ MQTT broker
    ▲ poller (snapshot-interval)        │ (filtered by hysteresis)                    (Home Assistant)
    └── POST /api/camera/snapshot       ▼
-                                  errorChannel ──▶ log + health
+                             pipelineErrorChannel ──▶ log (stage health records it too)
 ```
 
 | Channel | Payload | Producer → consumer |
@@ -56,8 +56,10 @@ end to end before the next starts. With a 30 s interval and a sub-second
 pipeline there is no need for queues or executors.
 
 Failures (ffmpeg exits non-zero, no contour found, broker down) raise an exception
-in the stage. The exception goes to `errorChannel`, which logs it and records it in
-that feature's health. The next poll starts clean. A failure never stops the
+in the stage, which records it for its own health indicator. The exception unwinds
+to the camera poller, whose error channel is `pipelineErrorChannel`; that flow logs
+the cause's message at WARN under `oiltank.errors`, without a stack trace, since an
+unreachable camera fails every poll. The next poll starts clean. A failure never stops the
 poller.
 
 `PipelineTopologyTest` asserts the wiring against the graph Spring Integration
@@ -78,28 +80,34 @@ Captures one JPEG frame from the RTSP stream.
   with a timeout. It rejects a non-zero exit, empty output, or bytes `ImageIO`
   cannot decode. The port lets tests and local runs use a `FileSnapshotSource`
   that replays fixture images, so no camera is needed.
-- `CameraService.capture()` calls the source, keeps the latest `Snapshot` and
-  capture statistics, and returns the snapshot.
-- `CameraConfig` declares the inbound flow
-  `IntegrationFlow.fromSupplier(cameraService::capture) { poller(fixedDelay(interval)) }`
-  sending to `snapshotChannel`, and a gateway so the controller can trigger a capture
-  on demand.
-- `CameraController`: `GET /api/camera/snapshot` returns the latest JPEG (404 before
-  the first capture). `POST /api/camera/snapshot` captures now and runs the pipeline.
+- `CameraService.capture()` calls the source, checks the bytes decode (`ImageIO`)
+  whatever the source, keeps the latest `Snapshot` and capture statistics, and
+  returns the snapshot. `captureNow()` also sends it to `snapshotChannel`.
+- `CameraConfig` declares the polled inbound flow `cameraFlow`, a fixed delay of
+  `snapshot-interval`, sending to `snapshotChannel`. On-demand captures go through
+  `CameraService.captureNow()` rather than a gateway. So a manual capture and a poll
+  can overlap, and detection's state must be thread-safe.
+- `CameraController`: `GET /api/camera` returns the capture status.
+  `GET /api/camera/snapshot` returns the latest JPEG with `Last-Modified` (404 before
+  the first capture). `POST /api/camera/snapshot` captures now, runs the pipeline,
+  and returns the status. A capture failure is a 502 with the reason.
+- ffmpeg's stderr is passed into the failure message with the RTSP URL redacted,
+  since ffmpeg echoes the input URL, credentials included.
 - Health: UP if the last capture succeeded and is younger than `3 × snapshot-interval`.
-  DOWN with the last error otherwise. UNKNOWN before the first attempt.
-- Info: source type, redacted URL (no credentials), interval, last capture time,
-  capture and failure counts.
+  DOWN with the last error otherwise. UNKNOWN until the first capture completes.
+  Details: capture and failure counts, last capture time, last failure.
+- Info (configuration only, as in iot-pipeline; runtime counts are in health):
+  source type, redacted URL, ffmpeg path, timeout, interval.
 
 | Key (`oiltank.camera.*`) | Default | Notes |
 |---|---|---|
 | `enabled` | `true` | `@ConditionalOnProperty`: off stops the poller |
-| `source` | `ffmpeg` | `ffmpeg` or `file` |
-| `rtsp-url` | `${OILTANK_CAMERA_RTSP_URL}` | Required when `source=ffmpeg`; no default |
+| `source` | `${CAMERA_SOURCE:ffmpeg}` | `ffmpeg` or `file` |
+| `rtsp-url` | `${OILTANK_CAMERA_RTSP_URL:}` | Required when `source=ffmpeg`; startup fails without it |
 | `snapshot-interval` | `30s` | `Duration`, at least 5 s |
 | `capture-timeout` | `15s` | Kills ffmpeg if exceeded |
-| `ffmpeg-path` | `ffmpeg` | Resolved on `PATH` |
-| `file.directory` | (none) | Fixture images for `source=file` |
+| `ffmpeg-path` | `${FFMPEG_PATH:ffmpeg}` | Resolved on `PATH` |
+| `file.directory` | (none) | Required for `source=file`; `.jpg`/`.jpeg` replayed in name order, cycling |
 
 ### detection/
 
@@ -210,9 +218,11 @@ Publishes to Home Assistant through MQTT discovery.
 
 ## Cross-cutting: pipeline/
 
-- `OiltankChannels.kt`: channel name constants.
-- `PipelineConfig`: declares the three `DirectChannel`s and the `errorChannel`
-  logging flow.
+- `PipelineChannels.kt`: channel name constants.
+- `PipelineConfig`: declares the `DirectChannel`s and the `pipelineErrorChannel`
+  logging flow. Until detection exists it also holds `snapshotSinkFlow`, which
+  logs each snapshot at DEBUG and drops it. Detection replaces it, because a direct
+  channel with two subscribers load-balances between them.
 - There is no feature-level Datafill here. If one is needed later it is
   `PipelineDatafill` under `oiltank.pipeline`.
 
@@ -272,8 +282,11 @@ When storage would become necessary:
 
 ## Testing
 
-- `OiltankMonitorApplicationTests`: context loads, with `oiltank.publish.enabled=false`
-  and `oiltank.camera.source=file`, so no test reaches a camera or a broker.
+- Every `@SpringBootTest` sets `oiltank.camera.source=file` with
+  `oiltank.camera.file.directory=src/test/resources/snapshots` (a synthetic image),
+  and later `oiltank.publish.enabled=false`, so no test reaches a camera or a broker.
+- `FfmpegSnapshotSourceTest` runs a stand-in shell script as ffmpeg, to stage
+  success, failure, empty output and timeout.
 - Fixture images under `src/test/resources/snapshots/`, labelled with their
   expected relative height. `OpenCvFloatDetectorTest` asserts each one is within a
   tolerance. These are the regression suite for the detection algorithm.
@@ -301,8 +314,9 @@ When storage would become necessary:
 
 ## Implementation order
 
-1. `pipeline/` channels and error flow, plus the `ActuatorContributionTest` scaffold.
-2. `camera/` with `FileSnapshotSource` first, then `FfmpegSnapshotSource`.
+1. ~~`pipeline/` channels and error flow, plus the `ActuatorContributionTest` scaffold.~~ Done.
+2. ~~`camera/` with `FileSnapshotSource` first, then `FfmpegSnapshotSource`.~~ Done; not yet
+   tried against the real camera.
 3. `detection/` with OpenCV and the fixture-image tests.
 4. `level/`.
 5. `publish/` against a dev Mosquitto broker.

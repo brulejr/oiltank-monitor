@@ -12,9 +12,30 @@ server:
   # local Docker containers.
   port: ${SERVER_PORT:5001}
 
-# Root of every feature's Datafill (camera, detection, level, publish); see
-# docs/DESIGN.md. Empty until the first feature lands.
-oiltank: {}
+spring:
+  integration:
+    management:
+      # Micrometer observations for every channel and handler (observability per stage).
+      observation-patterns: "*"
+
+# Root of every feature's Datafill; see docs/DESIGN.md.
+oiltank:
+  # Snapshot capture. `ffmpeg` reads the RTSP camera and needs OILTANK_CAMERA_RTSP_URL,
+  # deliberately not defaulted: without a camera, set CAMERA_SOURCE=file and point
+  # oiltank.camera.file.directory at some images (application-local.yml is the place).
+  camera:
+    enabled: ${CAMERA_ENABLED:true}
+    source: ${CAMERA_SOURCE:ffmpeg}
+    rtsp-url: ${OILTANK_CAMERA_RTSP_URL:}
+    snapshot-interval: 30s
+    capture-timeout: 15s
+    ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
+
+logging:
+  level:
+    # Each stage logs under `oiltank.*`. DEBUG while detection is being tuned, since
+    # the log is the only record of each reading; drop to INFO once it is stable.
+    oiltank: DEBUG
 
 management:
   endpoints:
