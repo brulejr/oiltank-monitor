@@ -30,7 +30,7 @@ import kotlin.test.assertEquals
     properties = [
         // Replays a fixture image rather than reaching a camera.
         "oiltank.camera.source=file",
-        "oiltank.camera.file.directory=src/test/resources/snapshots",
+        "oiltank.camera.file.directory=src/test/resources/gauge",
     ],
 )
 class PipelineTopologyTest {
@@ -52,16 +52,19 @@ class PipelineTopologyTest {
 
     private val pipelineChannels = listOf(
         PipelineChannels.SNAPSHOT,
+        PipelineChannels.FLOAT_READING,
         PipelineChannels.PIPELINE_ERRORS,
     )
 
     @Test
     fun `the stages form the intended chain`() {
         val expected = mapOf(
-            // Also sent to by CameraService.captureNow, which is not a flow. The sink holds
-            // the place of detection, not yet built.
-            PipelineChannels.SNAPSHOT to Wiring(setOf("snapshotSinkFlow"), setOf("cameraFlow")),
-            // The camera poller's error channel: a failed capture lands here.
+            // Also sent to by CameraService.captureNow, which is not a flow.
+            PipelineChannels.SNAPSHOT to Wiring(setOf("detectionFlow"), setOf("cameraFlow")),
+            // The sink holds the place of level, not yet built.
+            PipelineChannels.FLOAT_READING to Wiring(setOf("floatReadingSinkFlow"), setOf("detectionFlow")),
+            // The camera poller's error channel: a failed capture or detection lands here.
+            // CameraService.captureNow also sends here, but is not a flow.
             PipelineChannels.PIPELINE_ERRORS to Wiring(setOf("pipelineErrorFlow"), setOf("cameraFlow")),
         )
 

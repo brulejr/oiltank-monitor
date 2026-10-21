@@ -31,6 +31,56 @@ oiltank:
     capture-timeout: 15s
     ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
 
+  # Float detection. The roi, marks.rows and reference-offset belong to one camera
+  # position, measured on 2026-10-20. Mark tracking absorbs drift of up to
+  # marks.tracking.max-shift rows; after a bigger move, re-measure them from
+  # GET /api/detection/debug. Pixels in the full 1920x1080 frame, y growing downwards.
+  detection:
+    # Ends above the gauge's metal base, which glows under infrared from row 816.
+    roi:
+      x: 905
+      y: 420
+      width: 130
+      height: 390
+    # Daylight: the float's yellow, on OpenCV's HSV scales (hue 0-180, saturation and
+    # value 0-255).
+    color:
+      hue-min: 15
+      hue-max: 40
+      saturation-min: 80
+      value-min: 60
+    # Night, when the camera switches to infrared and the frame has no colour: the float
+    # glows, and is told from the narrower reflection down the tube by its width.
+    infrared:
+      brightness-min: 200
+      min-width: 45
+      max-gap: 12
+    min-area: 150
+    # The gauge's graduations, top to bottom: F, 3/4, 1/2, 1/4, E. The rows are the
+    # reference the tracker shifts as the camera drifts; these were found automatically
+    # in the day and night frames of 2026-10-20 (E agreed to within 2 rows).
+    marks:
+      levels: [1.00, 0.75, 0.50, 0.25, 0.00]
+      rows: [454, 541, 629, 720, 787]
+      tracking:
+        enabled: true
+        max-shift: 60
+        tolerance: 6
+        min-matches: 3
+        min-contrast: 12
+        min-spacing: 40
+        float-rows: 75
+    # From the top of the float down to where the gauge is read. Fitted to one level so
+    # far (1/2, by day and by night); refit once frames at other levels exist.
+    reference-offset: 20
+    smoothing-alpha: 0.30
+    hysteresis-delta: 0.003
+    # Readings either side of the camera's day/night switch should agree; a difference
+    # beyond the tolerance is reported in health as a reason to recalibrate.
+    cross-check:
+      window: 30m
+      tolerance: 0.03
+
 logging:
   level:
     # Each stage logs under `oiltank.*`. DEBUG while detection is being tuned, since

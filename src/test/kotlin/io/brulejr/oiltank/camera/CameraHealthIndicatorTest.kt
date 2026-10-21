@@ -33,7 +33,7 @@ class CameraHealthIndicatorTest {
     private fun status(service: CameraService, elapsed: Duration = Duration.ZERO) =
         CameraHealthIndicator(service, datafill, clockAt(capturedAt + elapsed)).health().status.code
 
-    private fun service(source: SnapshotSource) = CameraService(source, NullChannel(), clockAt(capturedAt))
+    private fun service(source: SnapshotSource) = CameraService(source, NullChannel(), NullChannel(), clockAt(capturedAt))
 
     @Test
     fun `unknown before the first capture`() {

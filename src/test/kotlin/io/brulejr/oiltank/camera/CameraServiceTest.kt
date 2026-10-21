@@ -10,7 +10,10 @@ package io.brulejr.oiltank.camera
 
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.springframework.integration.channel.DirectChannel
 import org.springframework.integration.channel.QueueChannel
+import org.springframework.messaging.MessageHandler
+import org.springframework.messaging.MessagingException
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -24,8 +27,9 @@ class CameraServiceTest {
     private val now = Instant.parse("2026-10-20T12:00:00Z")
     private val clock = Clock.fixed(now, ZoneOffset.UTC)
     private val channel = QueueChannel()
+    private val errors = QueueChannel()
 
-    private fun service(source: SnapshotSource) = CameraService(source, channel, clock)
+    private fun service(source: SnapshotSource) = CameraService(source, channel, errors, clock)
 
     @Test
     fun `a capture is kept as the latest snapshot`() {
@@ -83,5 +87,16 @@ class CameraServiceTest {
         val snapshot = service.captureNow()
 
         assertSame(snapshot, assertNotNull(channel.receive(0)).payload)
+    }
+
+    @Test
+    fun `a failure further down the pipeline goes to the error channel, not the caller`() {
+        val failing = DirectChannel().apply { subscribe(MessageHandler { throw MessagingException(it, "no float") }) }
+        val service = CameraService({ testJpeg() }, failing, errors, clock)
+
+        service.captureNow()
+
+        assertEquals("no float", (assertNotNull(errors.receive(0)).payload as MessagingException).message)
+        assertNull(service.status().lastFailure)
     }
 }

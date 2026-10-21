@@ -36,8 +36,11 @@ class CameraConfig(private val datafill: CameraDatafill) {
     }
 
     @Bean
-    fun cameraService(source: SnapshotSource, @Qualifier(PipelineChannels.SNAPSHOT) snapshotChannel: MessageChannel) =
-        CameraService(source, snapshotChannel, clock)
+    fun cameraService(
+        source: SnapshotSource,
+        @Qualifier(PipelineChannels.SNAPSHOT) snapshotChannel: MessageChannel,
+        @Qualifier(PipelineChannels.PIPELINE_ERRORS) errorChannel: MessageChannel,
+    ) = CameraService(source, snapshotChannel, errorChannel, clock)
 
     @Bean
     fun cameraHealthIndicator(service: CameraService) = CameraHealthIndicator(service, datafill, clock)

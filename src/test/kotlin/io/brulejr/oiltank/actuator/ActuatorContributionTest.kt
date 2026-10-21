@@ -24,7 +24,7 @@ import kotlin.test.assertTrue
     properties = [
         // Replays a fixture image rather than reaching a camera.
         "oiltank.camera.source=file",
-        "oiltank.camera.file.directory=src/test/resources/snapshots",
+        "oiltank.camera.file.directory=src/test/resources/gauge",
     ],
 )
 class ActuatorContributionTest {
@@ -38,15 +38,15 @@ class ActuatorContributionTest {
     @Autowired
     lateinit var cameraService: CameraService
 
-    private val features = listOf("camera")
+    private val features = listOf("camera", "detection")
 
     /**
-     * The camera is up only after a capture. The poller takes one at startup, but on its
-     * own thread, so one is taken here rather than raced.
+     * Each stage is up only once a frame has passed through it. The poller sends one at
+     * startup, but on its own thread, so one is sent here rather than raced.
      */
     @BeforeEach
     fun capture() {
-        cameraService.capture()
+        cameraService.captureNow()
     }
 
     @Test

@@ -21,7 +21,7 @@ import kotlin.test.assertEquals
 class CameraControllerTest {
 
     private val jpeg = testJpeg()
-    private val controller = CameraController(CameraService({ jpeg }, NullChannel(), Clock.systemUTC()))
+    private val controller = CameraController(CameraService({ jpeg }, NullChannel(), NullChannel(), Clock.systemUTC()))
 
     @Test
     fun `no snapshot before the first capture`() {

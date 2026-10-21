@@ -8,7 +8,7 @@
  */
 package io.brulejr.oiltank.pipeline
 
-import io.brulejr.oiltank.camera.Snapshot
+import io.brulejr.oiltank.detection.FloatReading
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.integration.channel.DirectChannel
@@ -24,24 +24,28 @@ class PipelineConfig {
     @Bean(PipelineChannels.SNAPSHOT)
     fun snapshotChannel(): MessageChannel = DirectChannel()
 
+    @Bean(PipelineChannels.FLOAT_READING)
+    fun floatReadingChannel(): MessageChannel = DirectChannel()
+
     @Bean(PipelineChannels.PIPELINE_ERRORS)
     fun pipelineErrorChannel(): MessageChannel = DirectChannel()
 
     /**
-     * Ends the chain until detection subscribes to [PipelineChannels.SNAPSHOT]; remove it
+     * Ends the chain until level subscribes to [PipelineChannels.FLOAT_READING]; remove it
      * then, since a direct channel with two subscribers load-balances between them.
      */
     @Bean
-    fun snapshotSinkFlow() = integrationFlow(PipelineChannels.SNAPSHOT) {
-        log<Snapshot>(LoggingHandler.Level.DEBUG, "oiltank.pipeline") { message ->
-            "snapshot of ${message.payload.jpeg.size} bytes captured at ${message.payload.capturedAt}, no detection yet"
+    fun floatReadingSinkFlow() = integrationFlow(PipelineChannels.FLOAT_READING) {
+        log<FloatReading>(LoggingHandler.Level.DEBUG, "oiltank.pipeline") { message ->
+            "reading %.3f passed on, no level stage yet".format(message.payload.smoothed)
         }
         nullChannel()
     }
 
     /**
      * Logs a failure raised anywhere along the chain. The poller routes it here, since
-     * every channel is direct and the exception unwinds back to it.
+     * every channel is direct and the exception unwinds back to it, and so does
+     * [io.brulejr.oiltank.camera.CameraService.captureNow] for a capture made through the API.
      *
      * Only the cause's message is logged, not the stack trace: an unreachable camera
      * fails every poll, and the stage's own health indicator already records it.

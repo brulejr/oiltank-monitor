@@ -15,7 +15,7 @@ import org.springframework.boot.test.context.SpringBootTest
     properties = [
         // Replays a fixture image rather than reaching a camera.
         "oiltank.camera.source=file",
-        "oiltank.camera.file.directory=src/test/resources/snapshots",
+        "oiltank.camera.file.directory=src/test/resources/gauge",
     ],
 )
 class OiltankMonitorApplicationTests {

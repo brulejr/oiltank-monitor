@@ -10,6 +10,8 @@ package io.brulejr.oiltank.camera
 
 import org.springframework.integration.support.MessageBuilder
 import org.springframework.messaging.MessageChannel
+import org.springframework.messaging.MessagingException
+import org.springframework.messaging.support.ErrorMessage
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.time.Clock
@@ -26,6 +28,7 @@ import javax.imageio.ImageIO
 class CameraService(
     private val source: SnapshotSource,
     private val snapshotChannel: MessageChannel,
+    private val errorChannel: MessageChannel,
     private val clock: Clock,
 ) {
 
@@ -53,8 +56,19 @@ class CameraService(
         }
     }
 
-    /** Captures a frame outside the schedule and sends it down the pipeline, as a poll would. */
-    fun captureNow(): Snapshot = capture().also { snapshotChannel.send(MessageBuilder.withPayload(it).build()) }
+    /**
+     * Captures a frame outside the schedule and sends it down the pipeline, as a poll
+     * would. A failure further down is the later stage's, not the camera's: like the
+     * poller, this hands it to the error channel instead of throwing it, and that stage's
+     * health records it.
+     */
+    fun captureNow(): Snapshot = capture().also { snapshot ->
+        try {
+            snapshotChannel.send(MessageBuilder.withPayload(snapshot).build())
+        } catch (e: MessagingException) {
+            errorChannel.send(ErrorMessage(e))
+        }
+    }
 
     /** The latest frame captured, or null before the first. */
     fun latest(): Snapshot? = latest.get()

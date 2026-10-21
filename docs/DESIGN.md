@@ -1,7 +1,7 @@
 # Oil Tank Monitor: Design Notes
 
-Status: draft for review. `pipeline/` and `camera/` are implemented; detection,
-level and publish are not. Items marked
+Status: draft for review. `pipeline/`, `camera/` and `detection/` (with mark tracking
+and the day/night cross-check) are implemented; level and publish are not. Items marked
 **Proposed** go beyond the prototype and need a decision. Questions still open
 are collected at the end.
 
@@ -46,10 +46,12 @@ One reading moves through four stages, joined by direct channels named in
 Payloads (one file each, in the package that produces them):
 
 - `camera/Snapshot(jpeg: ByteArray, capturedAt: Instant)`
-- `detection/FloatReading(raw: Double, calibrated: Double, smoothed: Double, capturedAt: Instant)`.
-  All three values are relative heights in 0..1.
+- `detection/FloatReading(floatY: Int, raw: Double, smoothed: Double, capturedAt: Instant)`.
+  `raw` and `smoothed` are fill fractions in 0..1.
 - `level/TankLevel(percent: Int, status: LevelStatus, reading: FloatReading)`, where
   `LevelStatus` is `LOW | NORMAL | HIGH`.
+
+(`FloatReading` was revised after the first real frames; see detection/.)
 
 Every stage is synchronous on the poller thread, so one capture is processed
 end to end before the next starts. With a 30 s interval and a sub-second
@@ -111,45 +113,160 @@ Captures one JPEG frame from the RTSP stream.
 
 ### detection/
 
-Turns a snapshot into a smoothed relative float height.
+Turns a snapshot into a smoothed fill fraction.
 
-- `FloatDetector` (port), implemented by `OpenCvFloatDetector`. It ports the
-  prototype's algorithm: grayscale, histogram equalization, a centred ROI, 5×5
-  Gaussian blur, Otsu threshold (inverted when the ROI mean is above 127), the
-  largest external contour, then `1 - centerY / roiHeight`, clamped to 0..1.
-  Returns `null` when no contour is found.
-- The ROI becomes configuration instead of constants: width, height, and vertical
-  centre as a fraction of frame height (prototype values are 300, 500 and 0.55).
-- `DetectionService.process(snapshot)` detects, calibrates
-  (`slope × raw + intercept`, clamped), applies EMA smoothing, and returns a
-  `FloatReading`. It holds the EMA state and the last *published* value.
-- `DetectionConfig` declares the flow `snapshotChannel → transform(process) →
+**Revised 2026-10-20 after the first real frames** (`src/test/resources/gauge/`): the
+prototype's algorithm does not fit this camera. Findings:
+
+- **The float is the only yellow object on the gauge, so colour finds it.** Inside a
+  box around the tube, an HSV threshold (hue 15–40 on OpenCV's 0–180 scale,
+  saturation ≥ 80, value ≥ 60) gives exactly one blob in both frames, and nothing else.
+  The prototype's grayscale Otsu threshold with "largest contour" competes with the
+  black graduation marks, the black pipe behind the tube and the dark ring under the
+  float. It was not tried on these frames, but the float is neither the darkest nor the
+  largest region.
+- **The box must be configured, not centred.** The yellow board at the bottom left is
+  the same hue (about 7,400 matching pixels), so a box is required. The prototype's
+  fixed 300×500 box, centred horizontally, misses the gauge entirely in the November
+  frame (tube at x 1190–1340) and contains it today only because the camera was re-aimed.
+- **The camera moves.** Between the two frames the gauge shifted from x≈1260 to x≈970
+  and about 110 px down. Any pixel calibration is per framing, so recalibrating has to
+  be cheap: see the debug endpoint below.
+- **The marks are not evenly spaced in the image** (perspective from below): the gaps are
+  85/93/92/78 px in one frame and 91/87/88/82 px in the other. A single
+  slope-and-intercept cannot fit that; interpolating between the marks can.
+- **The visible float changes shape with viewing angle.** The wide upper part is 40 px
+  tall in the November frame and 13 px today. The gauge is read where the wide part
+  steps down to the narrow skirt; in both frames that sits on the ½ mark. So the
+  distance from any detected edge to the reading line belongs to the camera position,
+  like the marks (62 px from the top in November, 20 px today).
+- **At night the camera switches to infrared** (found live, 22:49). The frame is exactly
+  grey, so the yellow threshold finds nothing. Under IR the float glows white, and so
+  does a narrow reflection running the length of the tube (18–33 px wide, against the
+  float's 57–80). The gauge's metal base also glows, from row 816.
+- **The top edge is the reference both modes agree on.** In today's framing the float's
+  top is at 608 by day and 612 by night. Its bottom is 620 by day (only the part above
+  the ½ mark's black line reads as yellow) but 672 by night (the skirt glows too).
+
+Design:
+
+- `FloatDetector` (port) returns a `FloatBlob` (bounding box, area, `DetectionMode`) or
+  `null`. The application's is `DayNightFloatDetector`, which checks whether the ROI
+  has any colour (mean |R−G| + |G−B| below 1 is grey; daylight frames measure 5 or more)
+  and delegates:
+  - `ColorFloatDetector` (day): thresholds the ROI in HSV, opens the mask with a 3×3
+    erosion and dilation (removes specks), and takes the largest 8-connected blob.
+  - `InfraredFloatDetector` (night): counts each ROI row's pixels at or above
+    `infrared.brightness-min`. Rows at least `infrared.min-width` wide are the float's,
+    since the reflection down the tube is narrower. Bands separated by no more than
+    `infrared.max-gap` rows are joined, because a mark's black line crosses the float.
+    The topmost band is taken.
+
+  Either way a blob smaller than `min-area` is no float.
+- **No OpenCV.** Both detectors are plain Kotlin over `BufferedImage`: the ROI is about
+  50,000 pixels and the steps are simple, so they take a few milliseconds (measured
+  17 ms for the first frame, under 6 ms after). This drops the ~300 MB of natives
+  `opencv-platform` would add, and with them the build's dependency on the target CPU
+  architecture. An OpenCV detector could still be added behind the port.
+- **Mark tracking** (`MarkTracker`), added 2026-10-21. The marks are dark bars across
+  the tube, so each shows as a row darker than its neighbourhood in two column bands
+  near the tube's edges. Automatic discovery found exactly the five marks in all three
+  frames, within 2–3 px of hand measurements; for E it found 787–789 against a hand
+  measurement of 800, which was the error. But a stress test (a copy of the float pasted
+  between marks) showed free discovery can be fooled: the float's edges and dark
+  underside produce bands that sometimes *replace* a real mark while keeping the count
+  at five, so a count check would not catch it. So the marks are tracked, not
+  discovered:
+  - bands are looked for only outside the float's rows (`float-rows` below its top);
+  - the configured `marks.rows` are the reference, and the one vertical shift (within
+    `max-shift`) that matches the most bands within `tolerance` is chosen, then refined
+    to the mean offset of the matched marks;
+  - every mark moves by that shift, including those the float hides;
+  - fewer than `min-matches` matches fails the frame ("has the camera moved?") rather
+    than reading it against wrong marks;
+  - every mark that should be visible (inside the region and at least 15 rows from its
+    edges, outside the float's rows) must also be matched. The marks are evenly spaced
+    (about 88 rows), so a drift of one gap lines most of them up with their neighbours at
+    a small apparent shift, and enough would match to read every mark one level off. In
+    such a false alignment an end mark lands where there is no band. Tested at ±88 rows.
+
+  A stray band can at worst fail to match. Small camera drift is absorbed: frames moved
+  ±25 rows read 0.494–0.506, by day and by night. The ROI does not move, so a bigger
+  move needs recalibrating. Scaling the reference offset by the local mark gap was
+  considered, to absorb angle changes too, but the two framings disagree (0.23 of a gap
+  today, 0.66 in November), so the offset stays in pixels.
+- **Day/night cross-check.** When a reading follows one in the other mode within
+  `cross-check.window`, their raw levels are compared (`ModeComparison`), since the tank
+  barely changes in that time. The difference is a health detail and the summary
+  `oiltank.float.mode.difference`, flagged beyond `cross-check.tolerance`: a reason to
+  recalibrate, not a failed reading.
+- `DetectionService.process(snapshot)` detects the float, aligns the marks around it,
+  reads the gauge at the float's top plus `reference-offset`, converts that row to a fill
+  fraction by piecewise-linear interpolation between the aligned marks
+  (clamped to 0..1), applies EMA smoothing, and returns a `FloatReading`. It holds the
+  EMA state and the last value passed on, behind a lock (`@Synchronized`), since a
+  manual capture can overlap a poll.
+- `FloatReading(floatY: Int, raw: Double, smoothed: Double, mode: DetectionMode, capturedAt)`.
+  `raw` is the interpolated fraction; `calibrated` is gone, since the marks *are* the
+  calibration.
+- `DetectionConfig` declares `snapshotChannel → transform(process) →
   filter(hysteresis) → floatReadingChannel`. The filter drops a reading whose
   smoothed value moved less than `hysteresis-delta` from the last one passed on.
-  The first reading always passes.
-- `DetectionController`: `GET /api/detection` returns the last reading (raw,
-  calibrated, smoothed) and the active calibration. **Proposed:**
-  `GET /api/detection/debug` returns the last snapshot with the ROI and contour drawn
-  on it, for tuning the ROI.
-- Metrics (Micrometer, names kept from the prototype): timer
-  `oiltank.float.detection.time`; summaries `oiltank.float.level.{raw,calibrated,smoothed}`.
-- Health: UP if the last detection found a float. DOWN with the reason (no
-  contour, decode failure) otherwise.
-- Info: calibration, smoothing, hysteresis, ROI, detection and miss counts.
+  The first reading always passes. A frame with no float is a failure: it is
+  recorded for health and logged, and nothing is published.
+- `DetectionController`: `GET /api/detection` returns the counts and the last reading
+  (the calibration is on `/mgmt/info`). **Built (was Proposed):** `GET /api/detection/debug`
+  returns the latest frame, whether or not a float was found in it, with the ROI (cyan),
+  the dark bands found (orange ticks either side), the marks used (magenta), the float's
+  box (green) and the row read (red) drawn on it. Lines
+  only, no text, since text rendering needs fonts a slim container image may lack.
+  Recalibrating after the camera moves means reading pixel rows off this image and
+  editing `application.yml`.
+- Metrics: timer `oiltank.float.detection.time`; summaries
+  `oiltank.float.level.{raw,smoothed}`; counter `oiltank.float.detection.misses`.
+- Health: UP if the latest frame yielded a reading, DOWN with the reason otherwise,
+  UNKNOWN before the first. A reading beyond the end marks is clamped to 0 or 1, not
+  failed. Details include `markShift`, `marksMatched` and the latest
+  `dayNightComparison`.
+- Info: the ROI, colour and infrared settings, marks, offset, smoothing, hysteresis and
+  cross-check.
 
-| Key (`oiltank.detection.*`) | Default | Validation |
+| Key (`oiltank.detection.*`) | Today's framing | Validation |
 |---|---|---|
-| `calibration.slope` | `1.0` | non-zero |
-| `calibration.intercept` | `0.0` | |
+| `roi.x` / `roi.y` / `roi.width` / `roi.height` | `905` / `420` / `130` / `390` | > 0; must end above the base, which glows under IR |
+| `color.hue-min` / `color.hue-max` | `15` / `40` | 0..180, min < max |
+| `color.saturation-min` / `color.value-min` | `80` / `60` | 0..255 |
+| `infrared.brightness-min` | `200` | 0..255 |
+| `infrared.min-width` | `45` px | > 0; between the reflection's width and the float's |
+| `infrared.max-gap` | `12` rows | ≥ 0; a mark's thickness |
+| `min-area` | `150` px | > 0 |
+| `marks.levels` | `[1.0, 0.75, 0.5, 0.25, 0.0]` | ≥ 2, in 0..1, decreasing top to bottom |
+| `marks.rows` | `[454, 541, 629, 720, 787]` | one per level, increasing; the tracker's reference |
+| `marks.tracking.enabled` / `max-shift` / `tolerance` | `true` / `60` / `6` rows | |
+| `marks.tracking.min-matches` | `3` | 2..number of marks |
+| `marks.tracking.min-contrast` / `min-spacing` / `float-rows` | `12` / `40` / `75` | |
+| `cross-check.window` / `tolerance` | `30m` / `0.03` | |
+| `reference-offset` | `20` px | From the float's top down to the reading line; fitted at ½ only |
 | `smoothing-alpha` | `0.30` | in (0, 1] |
 | `hysteresis-delta` | `0.003` | ≥ 0 |
-| `roi.width` / `roi.height` | `300` / `500` | > 0 |
-| `roi.center-y` | `0.55` | in (0, 1) |
 
-OpenCV comes from `org.bytedeco:opencv-platform`, added with this feature. The full
-platform artifact bundles natives for every OS, which makes it about 300 MB. The
-build should pull only the target platform's natives (`javacpp.platform`); see the
-open questions.
+The ROI, marks and offset have no meaningful defaults: they belong to one camera
+position, so `application.yml` carries today's values with a comment saying so.
+
+The gauge marks are fractions of the tank's volume, since a gauge is graduated for its
+tank. Interpolating between them therefore already corrects for the horizontal tank's
+shape, which retires the tank-geometry proposal under level/ unless finer correction
+between marks proves necessary.
+
+Test images (`src/test/resources/gauge/`) are masked: everything outside a box around
+the gauge tube is flat grey, so they show nothing else of the house, while staying
+1920×1080 so their coordinates match `application.yml` (the Spring tests replay them
+with the real configuration). All read ½: `2026-10-20-half.jpg` (today,
+day), `2026-10-20-half-night.jpg` (today, infrared), and `old-framing/2025-11-15-half.jpg`
+(the earlier camera position, kept in a subdirectory so the test file source, which
+replays `gauge/`, sees only frames matching today's calibration). They read 0.506 by
+day and 0.492–0.497 by night with one offset. Since every frame shows ½, the offset is
+fitted, not validated: frames at other levels are still needed.
 
 ### level/
 
@@ -172,10 +289,8 @@ Turns a relative height into what a person cares about.
 | `low-percent` | `20` | 0..100, below `high-percent` |
 | `high-percent` | `95` | 0..100 |
 
-**Proposed:** a tank-geometry correction. A horizontal or oval tank does not hold
-volume linearly with float height. The prototype treats height as percent. A
-piecewise-linear `height → percent` table in the Datafill, empty by default
-(linear), would allow it later without changing the pipeline.
+~~**Proposed:** a tank-geometry correction.~~ Retired: interpolating between the gauge's
+own marks (see detection/) already maps float position to volume.
 
 ### publish/
 
@@ -220,9 +335,12 @@ Publishes to Home Assistant through MQTT discovery.
 
 - `PipelineChannels.kt`: channel name constants.
 - `PipelineConfig`: declares the `DirectChannel`s and the `pipelineErrorChannel`
-  logging flow. Until detection exists it also holds `snapshotSinkFlow`, which
-  logs each snapshot at DEBUG and drops it. Detection replaces it, because a direct
+  logging flow. Until level exists it also holds `floatReadingSinkFlow`, which
+  logs each reading passed on at DEBUG and drops it. Level replaces it, because a direct
   channel with two subscribers load-balances between them.
+- `CameraService.captureNow()` (the capture API) sends downstream failures to
+  `pipelineErrorChannel`, as the poller does, rather than failing the request: the
+  capture worked, and the failing stage's health records the rest.
 - There is no feature-level Datafill here. If one is needed later it is
   `PipelineDatafill` under `oiltank.pipeline`.
 
@@ -283,14 +401,14 @@ When storage would become necessary:
 ## Testing
 
 - Every `@SpringBootTest` sets `oiltank.camera.source=file` with
-  `oiltank.camera.file.directory=src/test/resources/snapshots` (a synthetic image),
+  `oiltank.camera.file.directory=src/test/resources/gauge` (real frames),
   and later `oiltank.publish.enabled=false`, so no test reaches a camera or a broker.
 - `FfmpegSnapshotSourceTest` runs a stand-in shell script as ffmpeg, to stage
   success, failure, empty output and timeout.
-- Fixture images under `src/test/resources/snapshots/`, labelled with their
-  expected relative height. `OpenCvFloatDetectorTest` asserts each one is within a
-  tolerance. These are the regression suite for the detection algorithm.
-  **Needs:** real captures from the camera.
+- Real frames under `src/test/resources/gauge/`, named with the level the gauge
+  showed. `GaugeReadingTest` reads each end to end with the application's detector
+  and asserts it within ±0.03. This is the regression suite for detection.
+  **Needs:** frames at levels other than ½.
 - Unit tests for `DetectionService` (calibration, EMA, hysteresis), `LevelService`
   (rounding, thresholds), and `PublishService` (topics, payload JSON).
 - `PipelineTopologyTest`, plus `ActuatorContributionTest` (every feature's indicator
@@ -317,7 +435,7 @@ When storage would become necessary:
 1. ~~`pipeline/` channels and error flow, plus the `ActuatorContributionTest` scaffold.~~ Done.
 2. ~~`camera/` with `FileSnapshotSource` first, then `FfmpegSnapshotSource`.~~ Done; not yet
    tried against the real camera.
-3. `detection/` with OpenCV and the fixture-image tests.
+3. ~~`detection/` with the fixture-image tests.~~ Done, without OpenCV, by day and night.
 4. `level/`.
 5. `publish/` against a dev Mosquitto broker.
 6. `docker/`, Bruno collection, and the end-to-end test.
@@ -325,17 +443,14 @@ When storage would become necessary:
 ## Open questions
 
 1. **Target hardware.** Which CPU architecture runs this (x86-64 server, Raspberry
-   Pi / ARM64)? This decides which OpenCV natives to bundle, the base image, and
-   whether a static ffmpeg or the distro package is used.
-2. **Capture strategy.** Keep a new ffmpeg process per snapshot (simple, about 1–3 s
+   Pi / ARM64)? With OpenCV gone it only decides the base image and how ffmpeg is
+   installed; both have ARM64 builds.
+2. ~~**Night.**~~ Resolved: an infrared detector reads the night frame (see detection/).
+3. **Capture strategy.** Keep a new ffmpeg process per snapshot (simple; measured at 2.6 s
    of RTSP negotiation each time), or use the camera's HTTP snapshot endpoint if it
    has one? 30 s polling makes the ffmpeg cost acceptable.
-3. **Proposed items above:** the debug overlay endpoint, the tank-geometry table,
-   the availability topic, and the low-level binary sensor. Which ones are in scope
+4. **Proposed items above:** the availability topic and the low-level binary sensor. Which are in scope
    for the first version?
-4. **Night and lighting.** Does the camera's IR mode change the image enough that
-   detection needs a second calibration, or a "no confident reading" outcome that
-   skips publishing?
 5. **Detection confidence.** Should a reading that jumps implausibly (for example
    more than 10 % in one interval, when a tank only drains slowly) be rejected
    rather than smoothed in?
@@ -344,3 +459,8 @@ When storage would become necessary:
 7. **Sensor identity.** Keep `oiltank_level` and the `oiltank_monitor` device
    identifier so the existing Home Assistant entity and its history carry over?
    **Leaning:** yes.
+8. **Calibration by assertion** (Option B, deferred until a frame at another level
+   exists): `POST /api/detection/calibrate {"level": 0.75}` fits the reference offset
+   from the current frame and returns the config snippet to paste, keeping the
+   application storage-free. With two or more levels it could fit an offset per mark,
+   if a single offset proves not to hold along the gauge.
