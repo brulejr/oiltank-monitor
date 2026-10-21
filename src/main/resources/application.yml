@@ -43,12 +43,13 @@ oiltank:
       width: 130
       height: 390
     # Daylight: the float's yellow, on OpenCV's HSV scales (hue 0-180, saturation and
-    # value 0-255).
+    # value 0-255). Saturation-led with a low value floor, so it holds in the dim colour
+    # frames around dawn and dusk too (the float's value falls to about 42).
     color:
       hue-min: 15
       hue-max: 40
-      saturation-min: 80
-      value-min: 60
+      saturation-min: 120
+      value-min: 30
     # Night, when the camera switches to infrared and the frame has no colour: the float
     # glows, and is told from the narrower reflection down the tube by its width.
     infrared:

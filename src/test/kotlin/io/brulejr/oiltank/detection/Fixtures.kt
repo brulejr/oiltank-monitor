@@ -17,13 +17,14 @@ import kotlin.io.path.readBytes
 
 /**
  * Real frames from the camera, with the calibration measured on each. All were taken
- * with the gauge reading 1/2: in the current camera position by day and by night
- * (infrared), and in an earlier position by day.
+ * with the gauge reading 1/2: in the current camera position by day, at dawn (colour,
+ * but dim) and by night (infrared), and in an earlier position by day.
  */
 object Fixtures {
 
     val currentFraming = Path.of("src/test/resources/gauge/2026-10-20-half.jpg")
     val currentFramingNight = Path.of("src/test/resources/gauge/2026-10-20-half-night.jpg")
+    val currentFramingDawn = Path.of("src/test/resources/gauge/2026-10-21-half-dawn.jpg")
     val oldFraming = Path.of("src/test/resources/gauge/old-framing/2025-11-15-half.jpg")
 
     /** The values in application.yml. */

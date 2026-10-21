@@ -13,7 +13,13 @@ import java.awt.image.BufferedImage
 
 /**
  * Finds the float by colour: the pixels inside [roi] within [color], cleaned of specks
- * by a morphological opening, and the largest 8-connected blob among them.
+ * by a morphological opening, and the topmost 8-connected blob of at least [minArea].
+ *
+ * Topmost rather than largest: the tube above the float is clear, so nothing yellow
+ * lies above it, while below it the float's skirt, seen through a graduation mark, can
+ * form a second and larger blob. The top edge is also the one the reading is taken
+ * from. This lets one set of thresholds, saturation-led and with a low value floor,
+ * serve both bright daylight and the dim colour frames around dawn and dusk.
  *
  * Plain Kotlin rather than OpenCV. The region is a few tens of thousands of pixels and
  * the steps are simple, so native libraries would add a platform dependency for nothing.
@@ -27,7 +33,7 @@ class ColorFloatDetector(
     override fun detect(image: BufferedImage): FloatBlob? {
         roi.requireFits(image)
         val mask = open(mask(image))
-        return largestBlob(mask)?.takeIf { it.area >= minArea }
+        return blobs(mask).filter { it.area >= minArea }.minByOrNull { it.top }
     }
 
     private fun mask(image: BufferedImage): BooleanArray {
@@ -58,10 +64,10 @@ class ColorFloatDetector(
         result
     }
 
-    private fun largestBlob(mask: BooleanArray): FloatBlob? {
+    private fun blobs(mask: BooleanArray): List<FloatBlob> {
         val seen = BooleanArray(mask.size)
         val stack = IntArray(mask.size)
-        var best: FloatBlob? = null
+        val blobs = mutableListOf<FloatBlob>()
         for (start in mask.indices) {
             if (!mask[start] || seen[start]) continue
             var left = Int.MAX_VALUE; var top = Int.MAX_VALUE; var right = -1; var bottom = -1; var area = 0
@@ -85,10 +91,8 @@ class ColorFloatDetector(
                     }
                 }
             }
-            if (best == null || area > best.area) {
-                best = FloatBlob(roi.x + left, roi.y + top, roi.x + right, roi.y + bottom, area, DetectionMode.COLOR)
-            }
+            blobs += FloatBlob(roi.x + left, roi.y + top, roi.x + right, roi.y + bottom, area, DetectionMode.COLOR)
         }
-        return best
+        return blobs
     }
 }

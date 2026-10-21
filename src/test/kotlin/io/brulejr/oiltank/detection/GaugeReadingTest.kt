@@ -50,6 +50,14 @@ class GaugeReadingTest {
     }
 
     @Test
+    fun `current framing at dawn, dim but in colour, reads one half`() {
+        val reading = read(Fixtures.currentFramingDawn, Fixtures.currentDatafill)
+
+        assertEquals(DetectionMode.COLOR, reading.mode)
+        assertEquals(0.5, reading.raw, tolerance)
+    }
+
+    @Test
     fun `current framing by night reads one half`() {
         val reading = read(Fixtures.currentFramingNight, Fixtures.currentDatafill)
 

@@ -59,12 +59,16 @@ data class DetectionDatafill(
         }
     }
 
-    /** Hue 0..180, saturation and value 0..255, as OpenCV scales them. */
+    /**
+     * Hue 0..180, saturation and value 0..255, as OpenCV scales them. Saturation-led, with a
+     * low value floor: the float stays strongly saturated as the light fades (value 42 at
+     * dawn), while warm-tinted parts of the tube are only weakly so.
+     */
     data class ColorRange(
         val hueMin: Int = 15,
         val hueMax: Int = 40,
-        val saturationMin: Int = 80,
-        val valueMin: Int = 60,
+        val saturationMin: Int = 120,
+        val valueMin: Int = 30,
     ) {
         init {
             require(hueMin in 0..180 && hueMax in 0..180 && hueMin < hueMax) {

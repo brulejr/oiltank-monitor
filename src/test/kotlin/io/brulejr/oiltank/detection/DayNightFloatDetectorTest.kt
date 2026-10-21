@@ -26,6 +26,11 @@ class DayNightFloatDetectorTest {
     }
 
     @Test
+    fun `a dim colour frame at dawn is still colour`() {
+        assertEquals(DetectionMode.COLOR, detector.detect(Fixtures.image(Fixtures.currentFramingDawn))?.mode)
+    }
+
+    @Test
     fun `an infrared frame goes to the infrared detector`() {
         assertEquals(DetectionMode.INFRARED, detector.detect(Fixtures.image(Fixtures.currentFramingNight))?.mode)
     }

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.awt.Color
 import java.awt.image.BufferedImage
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -28,18 +29,38 @@ class ColorFloatDetectorTest {
     fun `the float is found in the current framing`() {
         val blob = assertNotNull(detector(Fixtures.currentDatafill).detect(Fixtures.image(Fixtures.currentFraming)))
 
-        // Measured by hand: the wide part of the float spans rows 608 to 620.
+        // Measured by hand: the float's top is at row 608.
         assertTrue(blob.top in 604..612, "top ${blob.top}")
-        assertTrue(blob.bottom in 616..624, "bottom ${blob.bottom}")
+    }
+
+    @Test
+    fun `the float is found in a dim colour frame at dawn`() {
+        val blob = assertNotNull(detector(Fixtures.currentDatafill).detect(Fixtures.image(Fixtures.currentFramingDawn)))
+
+        // The same top as by night, when the camera was in infrared.
+        assertTrue(blob.top in 608..616, "top ${blob.top}")
+    }
+
+    @Test
+    fun `the topmost blob is the float, not the larger one below it`() {
+        val image = plain().apply {
+            createGraphics().run {
+                color = Color(220, 180, 30)
+                fillRect(930, 600, 60, 10)
+                fillRect(930, 650, 80, 40)
+                dispose()
+            }
+        }
+
+        assertEquals(600, assertNotNull(detector(Fixtures.currentDatafill).detect(image)).top)
     }
 
     @Test
     fun `the float is found in the old framing`() {
         val blob = assertNotNull(detector(Fixtures.oldDatafill).detect(Fixtures.image(Fixtures.oldFraming)))
 
-        // Measured by hand: rows 456 to 495.
+        // Measured by hand: the float's top is at row 456.
         assertTrue(blob.top in 452..460, "top ${blob.top}")
-        assertTrue(blob.bottom in 491..499, "bottom ${blob.bottom}")
     }
 
     @Test
