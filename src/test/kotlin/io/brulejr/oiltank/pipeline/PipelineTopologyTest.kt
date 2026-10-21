@@ -53,6 +53,7 @@ class PipelineTopologyTest {
     private val pipelineChannels = listOf(
         PipelineChannels.SNAPSHOT,
         PipelineChannels.FLOAT_READING,
+        PipelineChannels.TANK_LEVEL,
         PipelineChannels.PIPELINE_ERRORS,
     )
 
@@ -61,8 +62,9 @@ class PipelineTopologyTest {
         val expected = mapOf(
             // Also sent to by CameraService.captureNow, which is not a flow.
             PipelineChannels.SNAPSHOT to Wiring(setOf("detectionFlow"), setOf("cameraFlow")),
-            // The sink holds the place of level, not yet built.
-            PipelineChannels.FLOAT_READING to Wiring(setOf("floatReadingSinkFlow"), setOf("detectionFlow")),
+            PipelineChannels.FLOAT_READING to Wiring(setOf("levelFlow"), setOf("detectionFlow")),
+            // The sink holds the place of publish, not yet built.
+            PipelineChannels.TANK_LEVEL to Wiring(setOf("tankLevelSinkFlow"), setOf("levelFlow")),
             // The camera poller's error channel: a failed capture or detection lands here.
             // CameraService.captureNow also sends here, but is not a flow.
             PipelineChannels.PIPELINE_ERRORS to Wiring(setOf("pipelineErrorFlow"), setOf("cameraFlow")),

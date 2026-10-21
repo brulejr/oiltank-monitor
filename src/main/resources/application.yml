@@ -81,6 +81,12 @@ oiltank:
       window: 30m
       tolerance: 0.03
 
+  # The thresholds a level is judged against: below low-percent is LOW, above
+  # high-percent is HIGH.
+  level:
+    low-percent: 20
+    high-percent: 95
+
 logging:
   level:
     # Each stage logs under `oiltank.*`. DEBUG while detection is being tuned, since

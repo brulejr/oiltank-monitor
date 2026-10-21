@@ -13,17 +13,18 @@ package io.brulejr.oiltank.pipeline
  *
  * ```
  * [camera poller] ─┐
- * [capture API]   ─┴─> snapshot ──> detection ──> floatReading ──> (level, not yet built)
+ * [capture API]   ─┴─> snapshot ──> detection ──> floatReading ──> level ──> tankLevel ──> (publish, not yet built)
  *                                       │
  *                          (filtered by hysteresis)
  *
  * [any stage failure] ──> pipelineErrors ──> logged
  * ```
  *
- * Level and publish join the chain as they are built; see docs/DESIGN.md.
+ * Publish joins the chain when it is built; see docs/DESIGN.md.
  */
 object PipelineChannels {
     const val SNAPSHOT = "snapshotChannel"
     const val FLOAT_READING = "floatReadingChannel"
+    const val TANK_LEVEL = "tankLevelChannel"
     const val PIPELINE_ERRORS = "pipelineErrorChannel"
 }

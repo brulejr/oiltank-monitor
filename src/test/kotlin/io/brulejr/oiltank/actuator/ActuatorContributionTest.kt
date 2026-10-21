@@ -38,7 +38,7 @@ class ActuatorContributionTest {
     @Autowired
     lateinit var cameraService: CameraService
 
-    private val features = listOf("camera", "detection")
+    private val features = listOf("camera", "detection", "level")
 
     /**
      * Each stage is up only once a frame has passed through it. The poller sends one at

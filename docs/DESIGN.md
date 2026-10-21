@@ -1,7 +1,7 @@
 # Oil Tank Monitor: Design Notes
 
-Status: draft for review. `pipeline/`, `camera/` and `detection/` (with mark tracking
-and the day/night cross-check) are implemented; level and publish are not. Items marked
+Status: draft for review. `pipeline/`, `camera/`, `detection/` (with mark tracking
+and the day/night cross-check) and `level/` are implemented; publish is not. Items marked
 **Proposed** go beyond the prototype and need a decision. Questions still open
 are collected at the end.
 
@@ -270,24 +270,33 @@ fitted, not validated: frames at other levels are still needed.
 
 ### level/
 
-Turns a relative height into what a person cares about.
+Turns a reading into what a person cares about. Built 2026-10-21.
 
 - `LevelService.toLevel(reading)` returns
-  `TankLevel(percent = round(smoothed × 100), status, reading)`. The status is LOW
-  below `low-percent` and HIGH above `high-percent`. It keeps the latest level.
-- `LevelConfig` declares `floatReadingChannel → transform(toLevel) → tankLevelChannel`.
+  `TankLevel(percent = round(smoothed × 100), status, reading)`, clamped to 0..100. The
+  status is LOW below `low-percent`, HIGH above `high-percent`, and NORMAL otherwise,
+  the thresholds themselves included. It keeps the latest level.
+- `LevelConfig` declares `levelFlow`: `floatReadingChannel → transform(toLevel) →
+  tankLevelChannel`, logging each level at DEBUG under `oiltank.level`.
 - `LevelController`: `GET /api/level` returns the latest `TankLevel` (404 before the
   first). This replaces the prototype's Bruno request "Tank → Get Tank Level".
-- Metrics: gauge `oiltank.level.percent`. The prototype used a summary; a gauge
-  is the right type for a current value.
-- Health: always UP once a level exists. A LOW tank is not an application fault,
-  so the status goes in the details, not the health status.
-- Info: thresholds, latest percent and status.
+- Metrics: gauge `oiltank.level.percent` (base unit `percent`), NaN until the first level
+  rather than a misleading 0. The prototype used a summary; a gauge is the right type
+  for a current value.
+- Health: UP once a level exists, UNKNOWN before; percent, status and capture time in
+  the details. A LOW tank is not an application fault, so the status goes in the
+  details, never the health status.
+- Info: the thresholds (configuration only; the latest level is in health and the API).
 
 | Key (`oiltank.level.*`) | Default | Validation |
 |---|---|---|
 | `low-percent` | `20` | 0..100, below `high-percent` |
 | `high-percent` | `95` | 0..100 |
+
+The status has no hysteresis of its own. Detection's hysteresis (0.3 %) and smoothing
+keep the level from jittering, but a tank sitting right at 20 % could still alternate
+between 19 and 20, and so between LOW and NORMAL. This only matters once something acts
+on the status (the proposed "tank low" binary sensor); a margin can be added then.
 
 ~~**Proposed:** a tank-geometry correction.~~ Retired: interpolating between the gauge's
 own marks (see detection/) already maps float position to volume.
@@ -335,8 +344,8 @@ Publishes to Home Assistant through MQTT discovery.
 
 - `PipelineChannels.kt`: channel name constants.
 - `PipelineConfig`: declares the `DirectChannel`s and the `pipelineErrorChannel`
-  logging flow. Until level exists it also holds `floatReadingSinkFlow`, which
-  logs each reading passed on at DEBUG and drops it. Level replaces it, because a direct
+  logging flow. Until publish exists it also holds `tankLevelSinkFlow`, which
+  logs each level at DEBUG and drops it. Publish replaces it, because a direct
   channel with two subscribers load-balances between them.
 - `CameraService.captureNow()` (the capture API) sends downstream failures to
   `pipelineErrorChannel`, as the poller does, rather than failing the request: the
@@ -436,7 +445,7 @@ When storage would become necessary:
 2. ~~`camera/` with `FileSnapshotSource` first, then `FfmpegSnapshotSource`.~~ Done; not yet
    tried against the real camera.
 3. ~~`detection/` with the fixture-image tests.~~ Done, without OpenCV, by day and night.
-4. `level/`.
+4. ~~`level/`.~~ Done.
 5. `publish/` against a dev Mosquitto broker.
 6. `docker/`, Bruno collection, and the end-to-end test.
 
