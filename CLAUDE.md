@@ -5,7 +5,8 @@ float gauge from an RTSP camera snapshot (ffmpeg, then colour or infrared detect
 turns the float position into a calibrated, smoothed tank level, and publishes it to
 Home Assistant over MQTT discovery. It rewrites the prototype `brulejr/monitor-oiltank` using the conventions
 of `brulejr/iot-pipeline`. `docs/DESIGN.md` is the design doc: read it before
-changing pipeline structure.
+changing pipeline structure. When resuming work, read `docs/HANDOFF.md` for the current
+state, next steps and how this project has been worked on.
 
 Status: the whole chain works: snapshots by ffmpeg or from a directory, polled every
 30 s; the gauge read by day and at dawn/dusk (colour) and by night (infrared); the
