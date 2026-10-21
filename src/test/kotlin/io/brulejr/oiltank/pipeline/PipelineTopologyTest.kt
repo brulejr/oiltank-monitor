@@ -31,6 +31,8 @@ import kotlin.test.assertEquals
         // Replays a fixture image rather than reaching a camera.
         "oiltank.camera.source=file",
         "oiltank.camera.file.directory=src/test/resources/gauge",
+        // Nothing is published, so no broker is needed or reached.
+        "oiltank.publish.enabled=false",
     ],
 )
 class PipelineTopologyTest {
@@ -63,8 +65,7 @@ class PipelineTopologyTest {
             // Also sent to by CameraService.captureNow, which is not a flow.
             PipelineChannels.SNAPSHOT to Wiring(setOf("detectionFlow"), setOf("cameraFlow")),
             PipelineChannels.FLOAT_READING to Wiring(setOf("levelFlow"), setOf("detectionFlow")),
-            // The sink holds the place of publish, not yet built.
-            PipelineChannels.TANK_LEVEL to Wiring(setOf("tankLevelSinkFlow"), setOf("levelFlow")),
+            PipelineChannels.TANK_LEVEL to Wiring(setOf("publishFlow"), setOf("levelFlow")),
             // The camera poller's error channel: a failed capture or detection lands here.
             // CameraService.captureNow also sends here, but is not a flow.
             PipelineChannels.PIPELINE_ERRORS to Wiring(setOf("pipelineErrorFlow"), setOf("cameraFlow")),

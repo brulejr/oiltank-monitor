@@ -88,6 +88,28 @@ oiltank:
     low-percent: 20
     high-percent: 95
 
+  # Home Assistant, over MQTT discovery. Set PUBLISH_ENABLED=false to run without a
+  # broker. The identity defaults are the prototype's, so the existing entity and its
+  # history carry over.
+  publish:
+    enabled: ${PUBLISH_ENABLED:true}
+    mqtt:
+      url: ${MQTT_URL:tcp://localhost:1883}
+      client-id: ${MQTT_CLIENT_ID:oiltank-monitor}
+      username: ${MQTT_USERNAME:}
+      password: ${MQTT_PASSWORD:}
+      qos: 1
+    retain-state: true
+    retry:
+      initial-backoff: 1s
+      max-backoff: 1m
+    home-assistant:
+      discovery-prefix: homeassistant
+      sensor-id: oiltank_level
+      sensor-name: Oil Tank Level
+      device-id: oiltank_monitor
+      device-name: Oil Tank Monitor
+
 logging:
   level:
     # Each stage logs under `oiltank.*`. DEBUG while detection is being tuned, since

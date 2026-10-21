@@ -8,7 +8,6 @@
  */
 package io.brulejr.oiltank.pipeline
 
-import io.brulejr.oiltank.level.TankLevel
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.integration.channel.DirectChannel
@@ -32,18 +31,6 @@ class PipelineConfig {
 
     @Bean(PipelineChannels.PIPELINE_ERRORS)
     fun pipelineErrorChannel(): MessageChannel = DirectChannel()
-
-    /**
-     * Ends the chain until publish subscribes to [PipelineChannels.TANK_LEVEL]; remove it
-     * then, since a direct channel with two subscribers load-balances between them.
-     */
-    @Bean
-    fun tankLevelSinkFlow() = integrationFlow(PipelineChannels.TANK_LEVEL) {
-        log<TankLevel>(LoggingHandler.Level.DEBUG, "oiltank.pipeline") { message ->
-            "level ${message.payload.percent}% reached the end of the chain, no publish stage yet"
-        }
-        nullChannel()
-    }
 
     /**
      * Logs a failure raised anywhere along the chain. The poller routes it here, since

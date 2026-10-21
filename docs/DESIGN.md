@@ -1,7 +1,8 @@
 # Oil Tank Monitor: Design Notes
 
-Status: draft for review. `pipeline/`, `camera/`, `detection/` (with mark tracking
-and the day/night cross-check) and `level/` are implemented; publish is not. Items marked
+Status: draft for review. The whole chain is implemented: `pipeline/`, `camera/`,
+`detection/` (with mark tracking and the day/night cross-check), `level/` and `publish/`.
+Deployment (`docker/`, Bruno) is not. Items marked
 **Proposed** go beyond the prototype and need a decision. Questions still open
 are collected at the end.
 
@@ -120,7 +121,7 @@ prototype's algorithm does not fit this camera. Findings:
 
 - **The float is the only yellow object on the gauge, so colour finds it.** Inside a
   box around the tube, an HSV threshold (hue 15–40 on OpenCV's 0–180 scale,
-  saturation ≥ 80, value ≥ 60) gives exactly one blob in both frames, and nothing else.
+  saturation ≥ 80, value ≥ 60 at first) gives exactly one blob in both frames, and nothing else.
   The prototype's grayscale Otsu threshold with "largest contour" competes with the
   black graduation marks, the black pipe behind the tube and the dark ring under the
   float. It was not tried on these frames, but the float is neither the darkest nor the
@@ -144,6 +145,17 @@ prototype's algorithm does not fit this camera. Findings:
   grey, so the yellow threshold finds nothing. Under IR the float glows white, and so
   does a narrow reflection running the length of the tube (18–33 px wide, against the
   float's 57–80). The gauge's metal base also glows, from row 816.
+- **Dawn and dusk give dim colour frames** (found live, 07:15 on 2026-10-21). The camera
+  is in colour, but the float's value falls to about 42, under the first threshold of
+  60, so it was missed. Lowering the thresholds generally pulled in warm-tinted parts
+  of the tube in daylight and moved the float's top by 6 rows, and the region's mean
+  brightness (53 by day, 44 at dawn) is too close to switch on. What holds is
+  saturation: the float stays strongly saturated as the light fades, the tint does not.
+  With saturation ≥ 120 and value ≥ 30, the float's top is 608 by day (as before), 612
+  at dawn (as at night) and 455 in the November frame (456 before). Below the float,
+  the skirt seen through the ½ mark then forms a second blob, sometimes larger, so the
+  colour detector takes the **topmost** blob of at least `min-area`, as the infrared
+  one takes the topmost band: the tube above the float is clear.
 - **The top edge is the reference both modes agree on.** In today's framing the float's
   top is at 608 by day and 612 by night. Its bottom is 620 by day (only the part above
   the ½ mark's black line reads as yellow) but 672 by night (the skirt glows too).
@@ -155,7 +167,7 @@ Design:
   has any colour (mean |R−G| + |G−B| below 1 is grey; daylight frames measure 5 or more)
   and delegates:
   - `ColorFloatDetector` (day): thresholds the ROI in HSV, opens the mask with a 3×3
-    erosion and dilation (removes specks), and takes the largest 8-connected blob.
+    erosion and dilation (removes specks), and takes the topmost 8-connected blob.
   - `InfraredFloatDetector` (night): counts each ROI row's pixels at or above
     `infrared.brightness-min`. Rows at least `infrared.min-width` wide are the float's,
     since the reflection down the tube is narrower. Bands separated by no more than
@@ -235,7 +247,7 @@ Design:
 |---|---|---|
 | `roi.x` / `roi.y` / `roi.width` / `roi.height` | `905` / `420` / `130` / `390` | > 0; must end above the base, which glows under IR |
 | `color.hue-min` / `color.hue-max` | `15` / `40` | 0..180, min < max |
-| `color.saturation-min` / `color.value-min` | `80` / `60` | 0..255 |
+| `color.saturation-min` / `color.value-min` | `120` / `30` | 0..255; saturation-led, for dim frames too |
 | `infrared.brightness-min` | `200` | 0..255 |
 | `infrared.min-width` | `45` px | > 0; between the reflection's width and the float's |
 | `infrared.max-gap` | `12` rows | ≥ 0; a mark's thickness |
@@ -262,10 +274,10 @@ Test images (`src/test/resources/gauge/`) are masked: everything outside a box a
 the gauge tube is flat grey, so they show nothing else of the house, while staying
 1920×1080 so their coordinates match `application.yml` (the Spring tests replay them
 with the real configuration). All read ½: `2026-10-20-half.jpg` (today,
-day), `2026-10-20-half-night.jpg` (today, infrared), and `old-framing/2025-11-15-half.jpg`
+day), `2026-10-20-half-night.jpg` (today, infrared), `2026-10-21-half-dawn.jpg` (dim colour), and `old-framing/2025-11-15-half.jpg`
 (the earlier camera position, kept in a subdirectory so the test file source, which
 replays `gauge/`, sees only frames matching today's calibration). They read 0.506 by
-day and 0.492–0.497 by night with one offset. Since every frame shows ½, the offset is
+day, 0.497 at dawn and 0.492–0.497 by night with one offset. Since every frame shows ½, the offset is
 fitted, not validated: frames at other levels are still needed.
 
 ### level/
@@ -303,50 +315,68 @@ own marks (see detection/) already maps float position to volume.
 
 ### publish/
 
-Publishes to Home Assistant through MQTT discovery.
+Publishes to Home Assistant through MQTT discovery. Built 2026-10-21, following
+iot-pipeline's publish feature rather than a Spring Integration outbound adapter, since
+connection, retry and birth/last-will handling all need to be explicit.
 
-- `PublishService` builds the messages: the discovery config, the state (percent),
-  and the attributes JSON (percent, status, raw, calibrated, smoothed, `timestampIso`).
-- `PublishConfig` declares the Paho client factory, the outbound adapter
-  (`Mqtt.outboundChannelAdapter`), and the flow
-  `tankLevelChannel → split into state + attributes → mqttOutbound`. The discovery
-  message is sent on startup and again on every reconnect, retained, so Home
-  Assistant recovers after either side restarts. The prototype sent it once.
-- Topics: `<discovery-prefix>/sensor/<sensor-id>/{config,state,attributes}`.
-  Discovery config: `unit_of_measurement: "%"`, `state_class: measurement`,
-  `icon: mdi:gauge`, `json_attributes_topic`, and the device block
-  `{identifiers: [oiltank_monitor], name: "Oil Tank Monitor", manufacturer, model}`.
-- **Proposed:** an availability topic `<prefix>/sensor/<id>/availability`, with
-  `online` published on connect and `offline` as the Paho last will. Home Assistant
-  then shows the sensor as unavailable when the monitor is down, instead of a stale
-  value.
-- **Proposed:** a second entity, a `binary_sensor` "Oil tank low" driven by
-  `LevelStatus.LOW`, so Home Assistant automations need no threshold of their own.
-- `PublishController`: `POST /api/publish/discovery` re-sends the discovery config.
-  `GET /api/publish` returns the topics and the last message published to each.
-- Health: UP when the client is connected, DOWN otherwise. Last publish time
-  and error in the details.
-- Info: broker URL, client id, topics, QoS, retain.
+- `HomeAssistantMessages` builds the messages, all under
+  `<discovery-prefix>/sensor/<sensor-id>/`: `config` (discovery, retained), `state` (the
+  percentage), `attributes` (`percentage`, `status`, `raw`, `smoothed`, `mode`,
+  `timestampIso`; the prototype's `percentage` and `timestampIso` names are kept for
+  existing templates) and `availability` (`online`/`offline`, retained).
+- The prototype's identity is kept (decided 2026-10-21): `unique_id: oiltank_level`,
+  device `identifiers: [oiltank_monitor]`, name "Oil Tank Level", device "Oil Tank
+  Monitor", so the existing Home Assistant entity and its history carry over. Only the
+  device's manufacturer and model change (`brulejr`, `oiltank-monitor`).
+- `MqttPublisher` (behind `PublisherPort`) is a plain Paho client that connects on
+  demand, with `offline` registered as its last will. Every connection first sends the
+  discovery config and `online`, so after a reconnect of either side Home Assistant
+  finds the sensor again; the prototype sent discovery once. On a clean shutdown it
+  sends `offline` itself, since a broker publishes a last will only for a lost
+  connection. Paho's automatic reconnect is off.
+- **Availability (was Proposed), built:** Home Assistant shows the sensor as unavailable
+  while the monitor is down, instead of a stale value.
+- `PublishService` delivers each level as state then attributes. A message that fails is
+  held, latest per topic, and everything after it too; the circuit opens and held
+  messages are retried in order after a backoff that doubles up to `retry.max-backoff`,
+  on a one-second tick. Holding matters here because detection passes a level on only
+  when it changes, which can be hours apart. Held messages live in memory (see State
+  and storage). With `enabled: false` messages are counted and dropped, and nothing
+  connects; the Spring tests use that, rather than `@ConditionalOnProperty`, as
+  iot-pipeline does.
+- `PublishController`: `GET /api/publish` returns the counts and circuit state;
+  `GET /api/publish/messages` the last message sent to each topic;
+  `POST /api/publish/discovery` re-sends the discovery config.
+- Health: DOWN while the circuit is open (messages held), UP otherwise, with the broker,
+  counts, last publish time and last failure. UP proves nothing until the first publish,
+  since the connection is made on demand.
+- Info: broker URL, client id, QoS, retain, sensor and device ids, topics. No credentials.
+- Verified live against the local Mosquitto: discovery, `online`, state `50` and the
+  attributes on the first level, `offline` on shutdown; with the broker unreachable,
+  health DOWN and both messages held. `MqttPublisherIT` covers birth and last will against
+  a broker on localhost:1883 under a throwaway topic prefix, and skips without one.
+- **Still Proposed:** a `binary_sensor` "Oil tank low" driven by `LevelStatus.LOW`. A Home
+  Assistant automation can use the percentage meanwhile.
 
 | Key (`oiltank.publish.*`) | Default | Notes |
 |---|---|---|
-| `enabled` | `true` | `@ConditionalOnProperty`; Spring tests set `false` |
-| `mqtt.url` | `${MQTT_URL:tcp://localhost:1883}` | Replaces `MQTT_HOST` + `MQTT_PORT` |
-| `mqtt.client-id` | `oiltank-monitor` | |
-| `mqtt.username` / `mqtt.password` | `${MQTT_USERNAME}` / `${MQTT_PASSWORD}` | Optional |
-| `qos` | `1` | 0..2 |
-| `retain` | `true` | For state and attributes; discovery is always retained |
+| `enabled` | `${PUBLISH_ENABLED:true}` | Spring tests set `false` |
+| `mqtt.url` | `${MQTT_URL:tcp://localhost:1883}` | Replaces `MQTT_HOST` + `MQTT_PORT` (decided 2026-10-21) |
+| `mqtt.client-id` | `${MQTT_CLIENT_ID:oiltank-monitor}` | |
+| `mqtt.username` / `mqtt.password` | `${MQTT_USERNAME:}` / `${MQTT_PASSWORD:}` | Blank means none |
+| `mqtt.qos` | `1` | 0..2 |
+| `mqtt.connect-timeout` / `completion-timeout` | `5s` / `10s` | |
+| `retain-state` | `true` | State and attributes; discovery and availability are always retained |
+| `retry.initial-backoff` / `max-backoff` | `1s` / `1m` | |
 | `home-assistant.discovery-prefix` | `homeassistant` | |
-| `home-assistant.sensor-id` | `oiltank_level` | `[a-z0-9_]+` |
-| `home-assistant.device-name` | `Oil Tank Monitor` | |
+| `home-assistant.sensor-id` / `sensor-name` | `oiltank_level` / `Oil Tank Level` | `[a-z0-9_]+` |
+| `home-assistant.device-id` / `device-name` | `oiltank_monitor` / `Oil Tank Monitor` | |
 
 ## Cross-cutting: pipeline/
 
 - `PipelineChannels.kt`: channel name constants.
 - `PipelineConfig`: declares the `DirectChannel`s and the `pipelineErrorChannel`
-  logging flow. Until publish exists it also holds `tankLevelSinkFlow`, which
-  logs each level at DEBUG and drops it. Publish replaces it, because a direct
-  channel with two subscribers load-balances between them.
+  logging flow.
 - `CameraService.captureNow()` (the capture API) sends downstream failures to
   `pipelineErrorChannel`, as the poller does, rather than failing the request: the
   capture worked, and the failing stage's health records the rest.
@@ -446,7 +476,7 @@ When storage would become necessary:
    tried against the real camera.
 3. ~~`detection/` with the fixture-image tests.~~ Done, without OpenCV, by day and night.
 4. ~~`level/`.~~ Done.
-5. `publish/` against a dev Mosquitto broker.
+5. ~~`publish/` against a dev Mosquitto broker.~~ Done, verified against the local one.
 6. `docker/`, Bruno collection, and the end-to-end test.
 
 ## Open questions
@@ -458,16 +488,14 @@ When storage would become necessary:
 3. **Capture strategy.** Keep a new ffmpeg process per snapshot (simple; measured at 2.6 s
    of RTSP negotiation each time), or use the camera's HTTP snapshot endpoint if it
    has one? 30 s polling makes the ffmpeg cost acceptable.
-4. **Proposed items above:** the availability topic and the low-level binary sensor. Which are in scope
-   for the first version?
+4. ~~**Proposed items above.**~~ Availability built; the low-level binary sensor stays
+   Proposed.
 5. **Detection confidence.** Should a reading that jumps implausibly (for example
    more than 10 % in one interval, when a tank only drains slowly) be rejected
    rather than smoothed in?
-6. **MQTT env vars.** Switch from `MQTT_HOST`/`MQTT_PORT` to a single `MQTT_URL`,
-   as iot-pipeline does? This changes the deployment's env.
-7. **Sensor identity.** Keep `oiltank_level` and the `oiltank_monitor` device
-   identifier so the existing Home Assistant entity and its history carry over?
-   **Leaning:** yes.
+6. ~~**MQTT env vars.**~~ Decided: a single `MQTT_URL`, as iot-pipeline does.
+7. ~~**Sensor identity.**~~ Decided: the prototype's `oiltank_level` and `oiltank_monitor`
+   are kept.
 8. **Calibration by assertion** (Option B, deferred until a frame at another level
    exists): `POST /api/detection/calibrate {"level": 0.75}` fits the reference offset
    from the current frame and returns the config snippet to paste, keeping the

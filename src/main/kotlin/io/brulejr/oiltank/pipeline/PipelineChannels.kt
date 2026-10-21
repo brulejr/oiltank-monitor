@@ -13,14 +13,14 @@ package io.brulejr.oiltank.pipeline
  *
  * ```
  * [camera poller] ─┐
- * [capture API]   ─┴─> snapshot ──> detection ──> floatReading ──> level ──> tankLevel ──> (publish, not yet built)
+ * [capture API]   ─┴─> snapshot ──> detection ──> floatReading ──> level ──> tankLevel ──> publish ──> MQTT
  *                                       │
  *                          (filtered by hysteresis)
  *
  * [any stage failure] ──> pipelineErrors ──> logged
  * ```
  *
- * Publish joins the chain when it is built; see docs/DESIGN.md.
+ * See docs/DESIGN.md.
  */
 object PipelineChannels {
     const val SNAPSHOT = "snapshotChannel"

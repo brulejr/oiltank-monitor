@@ -7,11 +7,10 @@ Home Assistant over MQTT discovery. It rewrites the prototype `brulejr/monitor-o
 of `brulejr/iot-pipeline`. `docs/DESIGN.md` is the design doc: read it before
 changing pipeline structure.
 
-Status: `pipeline/`, `camera/`, `detection/` and `level/` work: snapshots by ffmpeg or
-from a directory, polled every 30 s, the gauge read by day (colour) and by night
-(infrared), and the reading turned into a percentage with a LOW/NORMAL/HIGH status.
-Publish is not started; until it exists, `tankLevelSinkFlow` in `PipelineConfig` logs
-and drops each level.
+Status: the whole chain works: snapshots by ffmpeg or from a directory, polled every
+30 s; the gauge read by day and at dawn/dusk (colour) and by night (infrared); the
+reading turned into a percentage with a LOW/NORMAL/HIGH status; and that published to
+Home Assistant over MQTT discovery. Deployment (`docker/`, Bruno) is not started.
 
 @.claude/CONVENTIONS.md
 
@@ -23,7 +22,8 @@ One package per feature, each a pipeline stage, under `io.brulejr.oiltank`:
 - `detection/`: finding the float (colour by day, brightness by night), calibration
   against the gauge's marks, smoothing, hysteresis
 - `level/`: tank level as a percentage, and its status against the thresholds
-- `publish/` (planned): Home Assistant MQTT discovery and state
+- `publish/`: Home Assistant MQTT discovery, state, attributes and availability, with
+  failed messages held (latest per topic) and retried
 
 Following the conventions, each feature has exactly one `*Config` declaring all its
 beans and flows, a validated `*Datafill` bound under `oiltank.*`, a `*Service`
@@ -38,7 +38,8 @@ builds; update its expected map when a stage is rewired.
 ```
 ./gradlew build          # compile + test
 ./gradlew test           # tests only
-./gradlew bootRun        # app on :5001, actuator at /mgmt; needs OILTANK_CAMERA_RTSP_URL
+./gradlew bootRun        # app on :5001, actuator at /mgmt; needs OILTANK_CAMERA_RTSP_URL,
+                         # publishes to MQTT_URL (default tcp://localhost:1883)
 CAMERA_SOURCE=file OILTANK_CAMERA_FILE_DIRECTORY=src/test/resources/gauge ./gradlew bootRun
                          # without a camera: replays the images in that directory
 ```
@@ -66,8 +67,12 @@ CAMERA_SOURCE=file OILTANK_CAMERA_FILE_DIRECTORY=src/test/resources/gauge ./grad
 - The boot jar excludes `application-local.yml`, which holds development
   credentials.
 - Spring tests must not reach a broker or camera: every `@SpringBootTest` sets
-  `oiltank.camera.source=file` and `oiltank.camera.file.directory=src/test/resources/gauge`,
-  and will set `oiltank.publish.enabled=false` once publishing exists.
+  `oiltank.camera.source=file`, `oiltank.camera.file.directory=src/test/resources/gauge`
+  and `oiltank.publish.enabled=false`; keep all three in any new one.
+  `MqttPublisherIT` is the exception by design: it uses a broker on localhost:1883 if
+  one is running, under a throwaway topic prefix, and skips otherwise.
+- The Home Assistant identity (`oiltank_level`, `oiltank_monitor`) is the prototype's, so
+  the existing entity and its history carry over. Changing either creates a new entity.
 - The RTSP URL carries the camera's credentials. Never log or report it raw: use
   `redactCredentials` / `redactUrlIn` (`camera/Redaction.kt`), including on ffmpeg's
   stderr, which echoes the URL.

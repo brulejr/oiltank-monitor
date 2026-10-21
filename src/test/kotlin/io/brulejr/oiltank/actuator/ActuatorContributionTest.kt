@@ -25,6 +25,8 @@ import kotlin.test.assertTrue
         // Replays a fixture image rather than reaching a camera.
         "oiltank.camera.source=file",
         "oiltank.camera.file.directory=src/test/resources/gauge",
+        // Nothing is published, so no broker is needed or reached.
+        "oiltank.publish.enabled=false",
     ],
 )
 class ActuatorContributionTest {
@@ -38,7 +40,7 @@ class ActuatorContributionTest {
     @Autowired
     lateinit var cameraService: CameraService
 
-    private val features = listOf("camera", "detection", "level")
+    private val features = listOf("camera", "detection", "level", "publish")
 
     /**
      * Each stage is up only once a frame has passed through it. The poller sends one at
