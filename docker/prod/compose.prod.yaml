@@ -1,0 +1,26 @@
+# Production: the application alone on its Docker host, reading the camera and
+# publishing to Home Assistant's broker. The host is managed by Ansible, which checks
+# out this repository, builds the jar and runs this file; see docker/prod/README.md for
+# what it must provide.
+#
+#   ./gradlew bootJar
+#   docker compose -f docker/prod/compose.prod.yaml --env-file <env file> up -d --build
+name: oiltank-monitor
+
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+    image: oiltank-monitor:${APP_VERSION:-latest}
+    environment:
+      PROFILE: prod
+      # Full property names, which outrank anything in a profile file.
+      OILTANK_CAMERA_RTSP_URL: ${OILTANK_CAMERA_RTSP_URL:?set OILTANK_CAMERA_RTSP_URL, the camera's RTSP stream with its credentials}
+      OILTANK_PUBLISH_MQTT_URL: ${MQTT_URL:?set MQTT_URL, the broker Home Assistant listens on}
+      OILTANK_PUBLISH_MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-oiltank-monitor}
+      OILTANK_PUBLISH_MQTT_USERNAME: ${MQTT_USERNAME:-}
+      OILTANK_PUBLISH_MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+    ports:
+      - "${APP_PORT:-5001}:5001"
+    restart: unless-stopped

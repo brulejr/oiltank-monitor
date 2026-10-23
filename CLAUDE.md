@@ -11,7 +11,8 @@ state, next steps and how this project has been worked on.
 Status: the whole chain works: snapshots by ffmpeg or from a directory, polled every
 30 s; the gauge read by day and at dawn/dusk (colour) and by night (infrared); the
 reading turned into a percentage with a LOW/NORMAL/HIGH status; and that published to
-Home Assistant over MQTT discovery. Deployment (`docker/`, Bruno) is not started.
+Home Assistant over MQTT discovery. It runs in Docker (`docker/`); the Bruno collection
+is not started.
 
 @.claude/CONVENTIONS.md
 
@@ -43,6 +44,10 @@ builds; update its expected map when a stage is rewired.
                          # publishes to MQTT_URL (default tcp://localhost:1883)
 CAMERA_SOURCE=file OILTANK_CAMERA_FILE_DIRECTORY=src/test/resources/gauge ./gradlew bootRun
                          # without a camera: replays the images in that directory
+docker compose -f docker/dev/compose.dev.yaml up -d
+                         # Mosquitto on localhost:1883 for the above to publish to
+./gradlew bootJar && docker compose -f docker/local/compose.local.yaml --env-file .env up -d --build
+                         # the app in a container; .env needs OILTANK_CAMERA_RTSP_URL, MQTT_URL
 ```
 
 ## Notes

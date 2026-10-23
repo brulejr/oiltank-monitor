@@ -30,12 +30,12 @@ mode, which is what it shows.
 
 ## Next steps
 
-1. **Deployment** (implementation order step 6 in DESIGN.md): `docker/Dockerfile`
-   packaging `build/libs/oiltank-monitor.jar` with ffmpeg, `docker/{dev,local,prod}/compose.<usage>.yaml`,
-   a Bruno collection `bruno/oiltank-monitor/`, and the end-to-end test. Follow
-   iot-pipeline's layout. **Blocked on open question 1:** is the target x86-64 or ARM64
-   (Raspberry Pi)? It decides the base image and how ffmpeg is installed; OpenCV is no
-   longer a factor.
+1. **Rest of deployment** (implementation order step 6 in DESIGN.md): `docker/` is done
+   and verified against the real camera (see `docker/README.md`); still to come are a
+   Bruno collection `bruno/oiltank-monitor/` and the end-to-end test. The image is
+   1.1 GB, mostly Ubuntu's ffmpeg and its codec libraries; a slimmer ffmpeg is possible
+   if it matters on the target host. The Ansible side of production lives outside
+   this repo.
 2. **Validate the reading at another level.** Every test frame shows ½, and the reference
    offset (20 px) was fitted to them, so accuracy at other levels is unproven. When the
    gauge sits on ¾ or ¼, save a frame (`curl localhost:5001/api/camera/snapshot -o f.jpg`),
@@ -82,9 +82,9 @@ mode, which is what it shows.
   Without the camera, run from the test frames instead:
   `CAMERA_SOURCE=file OILTANK_CAMERA_FILE_DIRECTORY=src/test/resources/gauge ./gradlew bootRun`.
 - **ffmpeg** on `PATH` for the real camera.
-- **An MQTT broker on `tcp://localhost:1883`** for publishing (on the original machine,
-  an `eclipse-mosquitto` Docker container). Without one, set `PUBLISH_ENABLED=false`, or
-  publish health goes DOWN and messages are held. `MqttPublisherIT` uses the broker if
+- **An MQTT broker on `tcp://localhost:1883`** for publishing:
+  `docker compose -f docker/dev/compose.dev.yaml up -d` starts one. Without one, set
+  `PUBLISH_ENABLED=false`, or publish health goes DOWN and messages are held. `MqttPublisherIT` uses the broker if
   present and skips otherwise.
 - The packaged jar leaves `application-local.yml` out, so when running the jar (rather
   than `bootRun`) pass `--spring.config.additional-location=file:src/main/resources/application-local.yml`.

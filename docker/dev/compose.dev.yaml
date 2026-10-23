@@ -1,0 +1,25 @@
+# Development support services: a Mosquitto broker standing in for Home Assistant's, so
+# the application run in the IDE can publish without reaching the real one. The
+# application itself runs in the IDE; see docker/local for running it here too. Usage
+# is in docker/dev/README.md.
+#
+# Run from the repository root:
+#   docker compose -f docker/dev/compose.dev.yaml up -d
+name: oiltank-monitor
+
+services:
+  # application.yml's default MQTT_URL, tcp://localhost:1883, reaches this.
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+    volumes:
+      # :z relabels the files for SELinux hosts (e.g. Fedora); harmless elsewhere.
+      - ../mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro,z
+      # Keeps retained messages, Home Assistant's discovery config among them, across
+      # restarts, as the real broker does.
+      - mosquitto-data:/mosquitto/data
+    restart: unless-stopped
+
+volumes:
+  mosquitto-data:

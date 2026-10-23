@@ -1,0 +1,30 @@
+# Local provisioning: the application in a container, reading the real camera and
+# publishing to the broker named in .env. Usage is in docker/local/README.md.
+#
+# Run from the repository root, after building the jar:
+#   ./gradlew bootJar
+#   docker compose -f docker/local/compose.local.yaml --env-file .env up -d --build
+#
+# The project name is the same as docker/dev's, so docker/dev's broker keeps running
+# beside this and can be the one it publishes to. Stop the copy running in the IDE
+# first: two instances would read the camera and publish everything twice.
+name: oiltank-monitor
+
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+    image: oiltank-monitor:local
+    environment:
+      PROFILE: prod
+      # Full property names, which outrank anything in a profile file; the short
+      # placeholders in application.yml (MQTT_URL and the like) do not.
+      OILTANK_CAMERA_RTSP_URL: ${OILTANK_CAMERA_RTSP_URL:?set OILTANK_CAMERA_RTSP_URL in .env, the camera's RTSP stream with its credentials}
+      OILTANK_PUBLISH_MQTT_URL: ${MQTT_URL:?set MQTT_URL in .env, the broker to publish to}
+      OILTANK_PUBLISH_MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-oiltank-monitor-local}
+      OILTANK_PUBLISH_MQTT_USERNAME: ${MQTT_USERNAME:-}
+      OILTANK_PUBLISH_MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+    ports:
+      - "${APP_PORT:-5001}:5001"
+    restart: unless-stopped

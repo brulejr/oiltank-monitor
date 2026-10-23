@@ -2,7 +2,7 @@
 
 Status: draft for review. The whole chain is implemented: `pipeline/`, `camera/`,
 `detection/` (with mark tracking and the day/night cross-check), `level/` and `publish/`.
-Deployment (`docker/`, Bruno) is not. Items marked
+`docker/` too; the Bruno collection and the end-to-end test are not. Items marked
 **Proposed** go beyond the prototype and need a decision. Questions still open
 are collected at the end.
 
@@ -459,13 +459,21 @@ When storage would become necessary:
 ## Deployment
 
 - `docker/Dockerfile`, shared by `docker/{dev,local,prod}/compose.<usage>.yaml`,
-  packages `build/libs/oiltank-monitor.jar` on `eclipse-temurin:21-jre`, runs as
-  1000:1000, and includes ffmpeg.
-- Secrets: the prototype's entrypoint reads `*_FILE` Docker secrets into env vars.
-  The rewrite can do the same, or use Spring Boot's `configtree:` import on
-  `/run/secrets`, which needs no shell script. **Leaning:** `configtree:`.
-- `dev` compose: a Mosquitto broker for local runs. `local`/`prod`: the app only,
-  pointed at the real broker.
+  packages `build/libs/oiltank-monitor.jar` on `eclipse-temurin:21-jre` with Ubuntu's
+  ffmpeg, layered as iot-pipeline's is, and runs as a system user `app` rather than
+  1000:1000, as iot-pipeline's does. Built on the host that runs it; see `docker/README.md`.
+- Secrets: decided 2026-10-22, plain environment variables from an env file kept out
+  of git (`.env` locally, Ansible's in production), as iot-pipeline does, rather than
+  the `configtree:` that was leaning. The only secret is the RTSP URL (plus broker
+  credentials if any), and one convention across the two projects outweighs keeping
+  it out of `docker inspect`. Compose passes full property names
+  (`OILTANK_CAMERA_RTSP_URL`, `OILTANK_PUBLISH_MQTT_URL`), which outrank profile files.
+- `dev` compose: a Mosquitto broker on localhost:1883 for runs from the IDE.
+  `local`/`prod`: the app only, pointed at the broker `MQTT_URL` names (no default);
+  `local` shares `dev`'s project name, so it can publish to that broker as
+  `tcp://mosquitto:1883`. Verified 2026-10-22: the `local` container read the real
+  camera (infrared, 48 %) and published to `dev`'s broker, with the URL's password in
+  neither the logs nor the actuator endpoints.
 - Bruno collection `bruno/oiltank-monitor/`: management (health, info, metrics,
   integration graph), camera, detection, level, publish.
 
@@ -477,13 +485,13 @@ When storage would become necessary:
 3. ~~`detection/` with the fixture-image tests.~~ Done, without OpenCV, by day and night.
 4. ~~`level/`.~~ Done.
 5. ~~`publish/` against a dev Mosquitto broker.~~ Done, verified against the local one.
-6. `docker/`, Bruno collection, and the end-to-end test.
+6. `docker/` done; Bruno collection and the end-to-end test to follow.
 
 ## Open questions
 
-1. **Target hardware.** Which CPU architecture runs this (x86-64 server, Raspberry
-   Pi / ARM64)? With OpenCV gone it only decides the base image and how ffmpeg is
-   installed; both have ARM64 builds.
+1. ~~**Target hardware.**~~ Resolved 2026-10-22: it does not matter. `eclipse-temurin:21-jre`
+   and Ubuntu's ffmpeg are both built for amd64 and arm64, so the one Dockerfile serves
+   an x86-64 server or a Raspberry Pi.
 2. ~~**Night.**~~ Resolved: an infrared detector reads the night frame (see detection/).
 3. **Capture strategy.** Keep a new ffmpeg process per snapshot (simple; measured at 2.6 s
    of RTSP negotiation each time), or use the camera's HTTP snapshot endpoint if it
