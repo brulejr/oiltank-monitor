@@ -2,7 +2,7 @@
 
 Status: draft for review. The whole chain is implemented: `pipeline/`, `camera/`,
 `detection/` (with mark tracking and the day/night cross-check), `level/` and `publish/`.
-`docker/` too; the Bruno collection and the end-to-end test are not. Items marked
+`docker/` and the Bruno collection too; the end-to-end test is not. Items marked
 **Proposed** go beyond the prototype and need a decision. Questions still open
 are collected at the end.
 
@@ -474,8 +474,9 @@ When storage would become necessary:
   `tcp://mosquitto:1883`. Verified 2026-10-22: the `local` container read the real
   camera (infrared, 48 %) and published to `dev`'s broker, with the URL's password in
   neither the logs nor the actuator endpoints.
-- Bruno collection `bruno/oiltank-monitor/`: management (health, info, metrics,
-  integration graph), camera, detection, level, publish.
+- Bruno collection `bruno/oiltank-monitor/`, laid out as iot-pipeline's: management
+  (health, info, metrics, the level gauge, integration graph), camera, detection, level,
+  publish, against the `LOCAL` environment's `oiltank_monitor_url`. Done 2026-10-22.
 
 ## Implementation order
 
@@ -485,7 +486,7 @@ When storage would become necessary:
 3. ~~`detection/` with the fixture-image tests.~~ Done, without OpenCV, by day and night.
 4. ~~`level/`.~~ Done.
 5. ~~`publish/` against a dev Mosquitto broker.~~ Done, verified against the local one.
-6. `docker/` done; Bruno collection and the end-to-end test to follow.
+6. `docker/` and the Bruno collection done; the end-to-end test to follow.
 
 ## Open questions
 

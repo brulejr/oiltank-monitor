@@ -31,8 +31,9 @@ mode, which is what it shows.
 ## Next steps
 
 1. **Rest of deployment** (implementation order step 6 in DESIGN.md): `docker/` is done
-   and verified against the real camera (see `docker/README.md`); still to come are a
-   Bruno collection `bruno/oiltank-monitor/` and the end-to-end test. The image is
+   and verified against the real camera (see `docker/README.md`), and the Bruno
+   collection `bruno/oiltank-monitor/` covers every endpoint; still to come is the
+   end-to-end test. The image is
    1.1 GB, mostly Ubuntu's ffmpeg and its codec libraries; a slimmer ffmpeg is possible
    if it matters on the target host. The Ansible side of production lives outside
    this repo.

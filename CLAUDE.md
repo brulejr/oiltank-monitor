@@ -11,8 +11,8 @@ state, next steps and how this project has been worked on.
 Status: the whole chain works: snapshots by ffmpeg or from a directory, polled every
 30 s; the gauge read by day and at dawn/dusk (colour) and by night (infrared); the
 reading turned into a percentage with a LOW/NORMAL/HIGH status; and that published to
-Home Assistant over MQTT discovery. It runs in Docker (`docker/`); the Bruno collection
-is not started.
+Home Assistant over MQTT discovery. It runs in Docker (`docker/`), and `bruno/oiltank-monitor/`
+holds a Bruno request for every endpoint.
 
 @.claude/CONVENTIONS.md
 

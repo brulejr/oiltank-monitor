@@ -1,0 +1,16 @@
+info:
+  name: Resend Discovery
+  type: http
+  seq: 3
+
+http:
+  method: POST
+  url: "{{oiltank_monitor_url}}/api/publish/discovery"
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
