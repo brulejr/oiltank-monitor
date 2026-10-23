@@ -14,11 +14,23 @@ retained on the broker.
 
 ## How it works
 
-```
-RTSP camera ─► camera ─► detection ─► level ─► publish ─► MQTT ─► Home Assistant
-  (ffmpeg)      ▲ every 30 s   │
-                │              ├─ by day and at dawn/dusk: the float's yellow
-   POST /api/camera/snapshot   └─ by night (infrared): the float's glow
+```mermaid
+flowchart LR
+    rtsp[RTSP camera] -- ffmpeg --> camera
+    poll([every 30 s]) -.-> camera
+    api([POST /api/camera/snapshot]) -.-> camera
+    camera -- snapshot --> detection
+
+    subgraph detection [detection]
+        direction TB
+        mode{colour in frame?}
+        mode -- "yes: day, dawn, dusk" --> color[the float's yellow]
+        mode -- "no: infrared, night" --> ir[the float's glow]
+    end
+
+    detection -- float reading --> level
+    level -- tank level --> publish
+    publish --> mqtt[MQTT broker] --> ha[Home Assistant]
 ```
 
 1. **Capture.** ffmpeg pulls one frame from the camera's RTSP stream. Without a
