@@ -11,7 +11,8 @@ the work has been run). `docs/PLAN.md` is the original scaffold plan, done.
 
 The whole pipeline works end to end and has been verified against the real camera and a
 local MQTT broker, both from the IDE and in a Docker container. Every step of DESIGN.md's
-implementation order is done; nothing has been deployed to production yet.
+implementation order is done, and it is deployed to production on the home automation
+Docker host (`docker/prod`).
 
 ```
 camera (ffmpeg/RTSP, every 30 s) → detection → level → publish (Home Assistant over MQTT)
@@ -35,15 +36,10 @@ The live gauge reads about ½ (48–50 %) in every mode, which is what it shows.
 
 ## Next steps
 
-1. **Production cutover.** The repo side is ready (`docker/prod/README.md` lists what the
-   host must provide: `OILTANK_CAMERA_RTSP_URL`, `MQTT_URL`, optional broker
-   credentials). Not started: the Ansible role. `~/repo/brulenet/ansible-homelab-inventory`
-   mentions neither this project nor iot-pipeline, so where iot-pipeline's deployment
-   lives is unknown; ask. When switching over, **stop the prototype first**: both publish
-   to the same Home Assistant entity (`oiltank_level`), and if the prototype's MQTT client
-   id is also `oiltank-monitor` (unchecked) each would knock the other off the broker.
-   Then confirm in Home Assistant that the entity's history carried over. The image is
-   1.1 GB, mostly Ubuntu's ffmpeg; slim it only if the host needs it.
+1. ~~**Production cutover.**~~ Done: running on the home automation Docker host from
+   `docker/prod`, deployed by Ansible outside this repository. The prototype must stay
+   stopped: both publish to the same Home Assistant entity (`oiltank_level`). The image
+   is 1.1 GB, mostly Ubuntu's ffmpeg; slim it only if the host needs it.
 2. **Validate the reading at another level.** Every test frame shows ½, and the reference
    offset (20 px) was fitted to them, so accuracy at other levels is unproven. When the
    gauge sits on ¾ or ¼, save a frame (`curl localhost:5001/api/camera/snapshot -o f.jpg`),
