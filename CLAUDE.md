@@ -75,8 +75,11 @@ docker compose -f docker/dev/compose.dev.yaml up -d
 - Spring tests must not reach a broker or camera: every `@SpringBootTest` sets
   `oiltank.camera.source=file`, `oiltank.camera.file.directory=src/test/resources/gauge`
   and `oiltank.publish.enabled=false`; keep all three in any new one.
-  `MqttPublisherIT` is the exception by design: it uses a broker on localhost:1883 if
-  one is running, under a throwaway topic prefix, and skips otherwise.
+  There are two exceptions by design. `MqttPublisherIT` uses a broker on localhost:1883
+  if one is running, under a throwaway topic prefix, and skips otherwise.
+  `PipelineEndToEndTest` turns publishing on, since with it off a level never reaches
+  the MQTT client, but swaps that client for a recorder and points the broker URL at a
+  closed port.
 - The Home Assistant identity (`oiltank_level`, `oiltank_monitor`) is the prototype's, so
   the existing entity and its history carry over. Changing either creates a new entity.
 - The RTSP URL carries the camera's credentials. Never log or report it raw: use

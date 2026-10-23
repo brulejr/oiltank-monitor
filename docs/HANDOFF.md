@@ -25,18 +25,16 @@ camera (ffmpeg/RTSP, every 30 s) → detection → level → publish (Home Assis
 | `63fc555` | Detection fix for dim colour frames at dawn/dusk |
 | `397ffe3` | `publish/`: Home Assistant discovery, state, attributes, availability, retry |
 
-104 tests pass (`./gradlew build`). The live gauge reads about ½ (49–50 %) in every
+105 tests pass (`./gradlew build`; `MqttPublisherIT` skips without a local broker). The live gauge reads about ½ (49–50 %) in every
 mode, which is what it shows.
 
 ## Next steps
 
-1. **Rest of deployment** (implementation order step 6 in DESIGN.md): `docker/` is done
-   and verified against the real camera (see `docker/README.md`), and the Bruno
-   collection `bruno/oiltank-monitor/` covers every endpoint; still to come is the
-   end-to-end test. The image is
-   1.1 GB, mostly Ubuntu's ffmpeg and its codec libraries; a slimmer ffmpeg is possible
-   if it matters on the target host. The Ansible side of production lives outside
-   this repo.
+1. **Deployment is done on this side** (implementation order step 6): `docker/` was
+   verified against the real camera, `bruno/oiltank-monitor/` covers every endpoint, and
+   `PipelineEndToEndTest` runs a frame through every stage. What remains is the Ansible
+   side of production, outside this repo. The image is 1.1 GB, mostly Ubuntu's ffmpeg
+   and its codec libraries; a slimmer ffmpeg is possible if it matters on the host.
 2. **Validate the reading at another level.** Every test frame shows ½, and the reference
    offset (20 px) was fitted to them, so accuracy at other levels is unproven. When the
    gauge sits on ¾ or ¼, save a frame (`curl localhost:5001/api/camera/snapshot -o f.jpg`),

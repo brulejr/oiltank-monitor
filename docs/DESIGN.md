@@ -2,7 +2,7 @@
 
 Status: draft for review. The whole chain is implemented: `pipeline/`, `camera/`,
 `detection/` (with mark tracking and the day/night cross-check), `level/` and `publish/`.
-`docker/` and the Bruno collection too; the end-to-end test is not. Items marked
+`docker/`, the Bruno collection and the end-to-end test too. Items marked
 **Proposed** go beyond the prototype and need a decision. Questions still open
 are collected at the end.
 
@@ -452,9 +452,13 @@ When storage would become necessary:
   (rounding, thresholds), and `PublishService` (topics, payload JSON).
 - `PipelineTopologyTest`, plus `ActuatorContributionTest` (every feature's indicator
   is UP and contributes info), as in iot-pipeline.
-- **Proposed:** one end-to-end test that runs a fixture image through all four
-  stages to a captured outbound message (`spring-integration-test` mock handler),
-  with no broker.
+- `PipelineEndToEndTest` runs a fixture frame through all four stages, from the camera's
+  poller to the state and attributes messages, and checks they carry the level the
+  gauge shows. Done 2026-10-22, with a recording `PublisherPort` in place of the MQTT
+  client rather than the proposed `spring-integration-test` mock handler: the mock
+  would replace the publish flow's handler, and so leave `PublishService` untested,
+  where the recorder replaces only the client. It is the one Spring test with
+  publishing on; its broker URL points at a closed port, so no broker can be reached.
 
 ## Deployment
 
@@ -486,7 +490,7 @@ When storage would become necessary:
 3. ~~`detection/` with the fixture-image tests.~~ Done, without OpenCV, by day and night.
 4. ~~`level/`.~~ Done.
 5. ~~`publish/` against a dev Mosquitto broker.~~ Done, verified against the local one.
-6. `docker/` and the Bruno collection done; the end-to-end test to follow.
+6. ~~`docker/`, Bruno collection, and the end-to-end test.~~ Done.
 
 ## Open questions
 
